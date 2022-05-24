@@ -117,6 +117,7 @@ bool hsmd_check_client_capabilities(struct hsmd_client *client,
 	case WIRE_HSMD_SIGN_MESSAGE:
 	case WIRE_HSMD_GET_OUTPUT_SCRIPTPUBKEY:
 	case WIRE_HSMD_SIGN_BOLT12:
+	case WIRE_HSMD_DERIVE_SECRET:
 		return (client->capabilities & HSM_CAP_MASTER) != 0;
 
 	/*~ These are messages sent by the HSM so we should never receive them. */
@@ -145,6 +146,7 @@ bool hsmd_check_client_capabilities(struct hsmd_client *client,
 	case WIRE_HSMD_SIGN_MESSAGE_REPLY:
 	case WIRE_HSMD_GET_OUTPUT_SCRIPTPUBKEY_REPLY:
 	case WIRE_HSMD_SIGN_BOLT12_REPLY:
+	case WIRE_HSMD_DERIVE_SECRET_REPLY:
 		break;
 	}
 	return false;
@@ -255,6 +257,22 @@ static void hsm_channel_secret_base(struct secret *channel_seed_base)
 		     * generation here, so we need to keep it that way for
 		     * existing clients, rather than using "channel seed". */
 		    "peer seed", strlen("peer seed"));
+}
+
+/* This will derive secret Key from the seed */
+static u8 *handle_derive_secret(struct hsmd_client *c, const u8 *msg_in)
+{
+	u8 *info;
+
+	if (!fromwire_hsmd_derive_secret(tmpctx, msg_in, &info))
+		return hsmd_status_malformed_request(c, msg_in);
+	
+	struct secret secret;
+
+	hkdf_sha256(&secret, sizeof(struct secret), NULL, 0,
+		    &secretstuff.hsm_secret, sizeof(secretstuff.hsm_secret),
+		    info, tal_bytelen(info));
+	return towire_hsmd_derive_secret_reply(NULL, &secret);
 }
 
 /*~ This gets the seed for this particular channel. */
@@ -1593,9 +1611,12 @@ u8 *hsmd_handle_client_message(const tal_t *ctx, struct hsmd_client *client,
 		return handle_sign_remote_htlc_to_us(client, msg);
 	case WIRE_HSMD_SIGN_DELAYED_PAYMENT_TO_US:
 		return handle_sign_delayed_payment_to_us(client, msg);
+	case WIRE_HSMD_DERIVE_SECRET:
+		return handle_derive_secret(client, msg);
 
 	case WIRE_HSMD_DEV_MEMLEAK:
 	case WIRE_HSMD_ECDH_RESP:
+	case WIRE_HSMD_DERIVE_SECRET_REPLY:
 	case WIRE_HSMD_CANNOUNCEMENT_SIG_REPLY:
 	case WIRE_HSMD_CUPDATE_SIG_REPLY:
 	case WIRE_HSMD_CLIENT_HSMFD_REPLY:
