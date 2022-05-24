@@ -1,0 +1,11 @@
+#include <common/node_id.h>
+#include <common/channel_id.h>
+#include <common/wireaddr.h>
+#include <bitcoin/tx.h>
+
+msgtype,static_chan_backup,6135,
+msgdata,static_chan_backup,dbid,u64,
+msgdata,static_chan_backup,chan_id,channel_id,
+msgdata,static_chan_backup,node_id,node_id,
+msgdata,static_chan_backup,addr,wireaddr_internal,
+msgdata,static_chan_backup,funding,bitcoin_outpoint,

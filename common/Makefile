@@ -92,7 +92,7 @@ COMMON_SRC_NOGEN :=				\
 	common/wire_error.c
 
 
-COMMON_SRC_GEN := common/status_wiregen.c common/peer_status_wiregen.c
+COMMON_SRC_GEN := common/status_wiregen.c common/scb_wiregen.c common/peer_status_wiregen.c 
 
 COMMON_HEADERS_NOGEN := $(COMMON_SRC_NOGEN:.c=.h)	\
 	common/closing_fee.h				\
@@ -106,7 +106,7 @@ COMMON_HEADERS_NOGEN := $(COMMON_SRC_NOGEN:.c=.h)	\
 	common/overflows.h				\
 	common/tx_roles.h
 
-COMMON_HEADERS_GEN := common/htlc_state_names_gen.h common/status_wiregen.h common/peer_status_wiregen.h
+COMMON_HEADERS_GEN := common/htlc_state_names_gen.h common/status_wiregen.h common/peer_status_wiregen.h common/scb_wiregen.h
 
 COMMON_HEADERS := $(COMMON_HEADERS_GEN) $(COMMON_HEADERS_NOGEN)
 COMMON_SRC := $(COMMON_SRC_NOGEN) $(COMMON_SRC_GEN)
