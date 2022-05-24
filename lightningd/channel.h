@@ -72,6 +72,23 @@ struct open_attempt {
 	const u8 *open_msg;
 };
 
+struct scb{
+	/* ID for the scb */
+	u64 id;
+
+	/* Channel-ID of the channel */
+	struct channel_id cid;
+
+	/* Peer's node ID */
+	struct node_id node_id;
+
+	/* To connect to the peer upon rebuidling */
+	struct wireaddr_internal addr;
+
+	/* This would be useful for keeping a watch on funding txn */
+	struct bitcoin_outpoint funding;
+};
+
 struct channel {
 	/* Inside peer->channels. */
 	struct list_node list;
@@ -248,6 +265,10 @@ struct channel {
 
 	/* Latest channel_update, for use in error messages. */
 	u8 *channel_update;
+
+	/* `Channel-shell` of this channel 
+	(Minimum information required to backup this channel). */
+	struct scb *scb;
 };
 
 /* For v2 opens, a channel that has not yet been committed/saved to disk */
