@@ -756,6 +756,14 @@ void channel_fail_permanent(struct channel *channel,
 			    const char *fmt,
 			    ...)
 {
+	/* FIXME: should I compare the whole scid for stub channel?
+		I doubt there are actually any channels in the Genesis block(1x1x1) */
+	if(channel->scid->u64 >> 40 == 1){
+		return; 
+		/* Don't do anything if it's an stub channel becasue 
+			peer has already closed it unilatelrally. */
+	}
+	
 	struct lightningd *ld = channel->peer->ld;
 	va_list ap;
 	char *why;
