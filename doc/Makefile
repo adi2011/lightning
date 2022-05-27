@@ -46,6 +46,7 @@ MANPAGES := doc/lightning-cli.1 \
 	doc/lightning-listpays.7 \
 	doc/lightning-listpeers.7 \
 	doc/lightning-listsendpays.7 \
+	doc/lightning-makesecret.7 \
 	doc/lightning-multifundchannel.7 \
 	doc/lightning-multiwithdraw.7 \
 	doc/lightning-newaddr.7 \
@@ -69,6 +70,7 @@ MANPAGES := doc/lightning-cli.1 \
 	doc/lightning-setchannelfee.7 \
 	doc/lightning-sendcustommsg.7 \
 	doc/lightning-signmessage.7 \
+	doc/lightning-staticbackup.7 \
 	doc/lightning-txprepare.7 \
 	doc/lightning-txdiscard.7 \
 	doc/lightning-txsend.7 \
