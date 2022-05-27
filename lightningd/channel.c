@@ -422,6 +422,8 @@ struct channel *new_channel(struct peer *peer, u64 dbid,
 	channel->scb->node_id = peer->id;
 	channel->scb->funding = *funding;
 	channel->scb->cid = *cid;
+	channel->scb->funding_sats = funding_sats;
+	channel->scb->type = tal_steal(channel, type);
 
 	if (!log) {
 		channel->log = new_log(channel,
@@ -447,12 +449,11 @@ struct channel *new_channel(struct peer *peer, u64 dbid,
 	channel->our_msat = our_msat;
 	channel->msat_to_us_min = msat_to_us_min;
 	channel->msat_to_us_max = msat_to_us_max;
-	if(last_tx){
+	if (last_tx) {
 		channel->last_tx = tal_steal(channel, last_tx);
 		channel->last_tx->chainparams = chainparams;
 		channel->last_tx_type = TX_UNKNOWN;
-	}
-	else{
+	} else {
 		channel->last_tx = NULL;
 	}
 	channel->last_sig = *last_sig;
@@ -529,6 +530,12 @@ struct channel *new_channel(struct peer *peer, u64 dbid,
 				  take(p2wpkh_for_keyidx(NULL, peer->ld,
 							 channel->final_key_idx)));
 
+	if(is_stub_scid(scid)){
+		channel->error = towire_errorfmt(peer->ld, 
+										&channel->cid,
+										"We can't be together anymore."
+										);
+	}
 	return channel;
 }
 
@@ -756,12 +763,10 @@ void channel_fail_permanent(struct channel *channel,
 			    const char *fmt,
 			    ...)
 {
-	/* FIXME: should I compare the whole scid for stub channel?
-		I doubt there are actually any channels in the Genesis block(1x1x1) */
-	if(channel->scid->u64 >> 40 == 1){
+	/* Don't do anything if it's an stub channel because
+	 * peer has already closed it unilatelrally. */
+	if(is_stub_scid(channel->scid)){
 		return; 
-		/* Don't do anything if it's an stub channel becasue 
-			peer has already closed it unilatelrally. */
 	}
 	
 	struct lightningd *ld = channel->peer->ld;

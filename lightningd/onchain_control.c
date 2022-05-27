@@ -669,9 +669,11 @@ enum watch_result onchaind_funding_spent(struct channel *channel,
 			   channel->final_key_idx);
 		return KEEP_WATCHING;
 	}
+	
 	/* This could be a mutual close, but it doesn't matter. 
-		We don't need this as well for stub channel*/
-	if(channel->scid->u64 >> 40 != 1){
+	 * We don't need this for stub channels as well */
+	if (!is_stub_scid(channel->scid))
+	{
 		bitcoin_txid(channel->last_tx, &our_last_txid);
 	}
 	

@@ -1759,15 +1759,17 @@ static void json_add_scb(struct lightningd *ld,
 			  struct json_stream *response,
 			  struct channel *c)
 {
-	u8 *msg = towire_static_chan_backup(tmpctx, 
-										c->scb->id, 
-										&c->scb->cid, 
-										&c->scb->node_id, 
-										&c->scb->addr, 
-										&c->scb->funding);
+	u8 *scb = towire_static_chan_backup(tmpctx,
+									c->scb->id,
+									&c->scb->cid,
+									&c->scb->node_id,
+									&c->scb->addr,
+									&c->scb->funding,
+									c->scb->funding_sats,
+									c->scb->type);
 
 	json_add_hex_talarr(response, NULL,
-			msg);
+			scb);
 }
 
 /*This will return a SCB for all the channels currently loaded 
@@ -1778,17 +1780,17 @@ static struct command_result *json_hex_scb(struct command *cmd,
 					     const jsmntok_t *params)
 {
 	struct json_stream *response;
+	struct peer *peer;
+	struct channel *channel;
 
 	if (!param(cmd, buffer, params, NULL))
         return command_param_failed();
+
 	response = json_stream_success(cmd);
 
 	json_array_start(response, "scb");
 
-	/* FIXME: Filter out some channels based on their state? */
 
-	struct peer *peer;
-	struct channel *channel;
 	list_for_each(&cmd->ld->peers, peer, list)
 		list_for_each(&peer->channels, channel, list)
 			json_add_scb(cmd->ld, response, channel);
@@ -1799,7 +1801,7 @@ static struct command_result *json_hex_scb(struct command *cmd,
 }
 
 static const struct json_command hex_scb_command = {
-	"hex-scb",
+	"staticbackup",
 	"backup",
 	json_hex_scb,
 	"Returns SCB of all the channels currently present in the DB"

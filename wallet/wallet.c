@@ -1269,7 +1269,6 @@ static struct channel *wallet_stmt2channel(struct wallet *w, struct db_stmt *stm
 	secp256k1_ecdsa_signature *lease_commit_sig;
 	u32 lease_chan_max_msat;
 	u16 lease_chan_max_ppt;
-	bool stub_chan = false;
 
 	peer_dbid = db_col_u64(stmt, "peer_id");
 	peer = find_peer_by_dbid(w->ld, peer_dbid);
@@ -1283,9 +1282,6 @@ static struct channel *wallet_stmt2channel(struct wallet *w, struct db_stmt *stm
 		scid = tal(tmpctx, struct short_channel_id);
 		if (!db_col_short_channel_id_str(stmt, "short_channel_id", scid))
 			return NULL;
-		if (scid->u64 >> 40 == 1){
-			stub_chan = true;
-		}
 	} else {
 		scid = NULL;
 	}
@@ -1491,15 +1487,6 @@ static struct channel *wallet_stmt2channel(struct wallet *w, struct db_stmt *stm
 	if (!wallet_channel_load_inflights(w, chan)) {
 		tal_free(chan);
 		return NULL;
-	}
-	if(stub_chan){
-		/* FIXME: What should I put in as an error?
-			the peer shouldn't know we have lost the states,
-			that can motivate him to cheat.*/
-		chan->error = towire_errorfmt(w->ld, 
-									  &cid,
-									 "We can't be together anymore.."
-									 );
 	}
 	return chan;
 }
@@ -1901,9 +1888,10 @@ void wallet_channel_save(struct wallet *w, struct channel *chan)
 	db_bind_talarr(stmt, 17, chan->shutdown_scriptpubkey[REMOTE]);
 	db_bind_u64(stmt, 18, chan->final_key_idx);
 	db_bind_u64(stmt, 19, chan->our_config.id);
-	if(chan->last_tx)
+	if (chan->last_tx)
 		db_bind_psbt(stmt, 20, chan->last_tx->psbt);
-	else db_bind_null(stmt, 20);
+	else 
+		db_bind_null(stmt, 20);
 	db_bind_signature(stmt, 21, &chan->last_sig.s);
 	db_bind_int(stmt, 22, chan->last_was_revoke);
 	db_bind_int(stmt, 23, chan->min_possible_feerate);

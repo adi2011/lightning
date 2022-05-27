@@ -72,7 +72,7 @@ struct open_attempt {
 	const u8 *open_msg;
 };
 
-struct scb{
+struct scb {
 	/* ID for the scb */
 	u64 id;
 
@@ -87,6 +87,13 @@ struct scb{
 
 	/* This would be useful for keeping a watch on funding txn */
 	struct bitcoin_outpoint funding;
+
+	/* For trimming the fees we need this */
+	struct amount_sat funding_sats;
+
+	/* No particular use in sweeping funds, But this
+	 * will be useful in future innovations */
+	const struct channel_type *type;
 };
 
 struct channel {
@@ -266,8 +273,8 @@ struct channel {
 	/* Latest channel_update, for use in error messages. */
 	u8 *channel_update;
 
-	/* `Channel-shell` of this channel 
-	(Minimum information required to backup this channel). */
+	/* `Channel-shell` of this channel
+	 * (Minimum information required to backup this channel). */
 	struct scb *scb;
 };
 

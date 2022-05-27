@@ -1208,35 +1208,38 @@ static struct channel *stub_chan(struct command *cmd,
 								struct node_id nodeid, 
 								struct channel_id cid,
 								struct bitcoin_outpoint funding,
-								struct wireaddr_internal addr){
+								struct wireaddr_internal addr,
+								struct amount_sat funding_sats,
+								struct channel_type *type)
+{
 	struct peer *peer;
 	peer = new_peer(cmd->ld,
-						0,
-						&nodeid,
-						&addr,
-						false
-						);
+					0,
+					&nodeid,
+					&addr,
+					false);
 	
 	struct lightningd *ld = cmd->ld;
 	
+	struct channel_config *our_config = tal(cmd, struct channel_config);
+	our_config->id = 0;
 
-	struct channel_config our_config;
-	memset(&our_config, 1, sizeof(struct channel_config));
-	our_config.id = 0;
-	
 	u32 feerate;
-	/* FIXME: What should be the appropriate value here? */
-	feerate = 192838; 
+	feerate = FEERATE_FLOOR; 
 
 	struct bitcoin_signature sig;
 	sig.sighash_type = SIGHASH_ALL;
 
 	struct pubkey pk;
 	struct basepoints basepoints;
-	pubkey_from_der(tal_hexdata(ld->wallet, 
+
+	if(!pubkey_from_der(tal_hexdata(cmd, 
 					type_to_string(tmpctx, struct node_id, &nodeid), 66),
 					33,
-					&pk);
+					&pk))
+	{
+		fatal("Invalid node id!");
+	};
 
 	struct pubkey localFundingPubkey;
 	get_channel_basepoints(ld, 
@@ -1245,10 +1248,11 @@ static struct channel *stub_chan(struct command *cmd,
 						   &basepoints, 
 						   &localFundingPubkey);
 
-	struct channel_info *channel_info = tal(ld->wallet, 
+	struct channel_info *channel_info = tal(cmd, 
 											struct channel_info);
-	memset(channel_info, 3, sizeof(*channel_info));
 	channel_info->their_config.id = 0;
+	/* To avoid the log_broken from channel.c (line-310) */
+	channel_info->their_config.channel_reserve = AMOUNT_SAT(0);
 	channel_info->theirbase = basepoints;
 	channel_info->remote_fundingkey = pk;
 	channel_info->remote_per_commit = pk;
@@ -1259,29 +1263,27 @@ static struct channel *stub_chan(struct command *cmd,
 	struct short_channel_id *scid = tal(cmd, struct short_channel_id);
 	
 	/*To indicate this is an stub channel we keep it's scid to 1x1x1.*/
-	if(!short_channel_id_from_str("1x1x1", 6, scid)){
-		return NULL;
-	}
+	if (!mk_short_channel_id(scid, 1, 1, 1))
+        fatal("Failed to make short channel 1x1x1!");
 	
-	struct channel *channel; //Channel Shell with Dummy data(mostly)
+	/* Channel Shell with Dummy data(mostly) */
+	struct channel *channel; 
 
 	channel = new_channel(peer, id,
 			      NULL, /* No shachain yet */
 			      CHANNELD_NORMAL,
 			      LOCAL,
-			      peer->ld->log,
-			      "billboard",
-			      8, &our_config,
-			      101,
+			      ld->log,
+			      "restored from static channel backup",
+			      0, our_config,
+			      0,
 			      1, 1, 1,
 			      &funding,
-			      AMOUNT_SAT(500000000), // FIXME: Is this correct? 
-				  /*Need to keep this very high from trimming the fees 
-				  	in onchaind.c(main).*/
+			      funding_sats,
 			      AMOUNT_MSAT(0),
 			      AMOUNT_SAT(0),
 			      true, /* !remote_funding_locked */
-			      scid, /* no scid yet */
+			      scid,
 			      &cid,
 			      /* The three arguments below are msatoshi_to_us,
 			       * msatoshi_to_us_min, and msatoshi_to_us_max.
@@ -1292,18 +1294,19 @@ static struct channel *stub_chan(struct command *cmd,
 			      AMOUNT_MSAT(0), /* msat_to_us_max */
 			      NULL,
 			      &sig,
-			      NULL, /* No HTLC sigs yet */
+			      NULL, /* No HTLC sigs */
 			      channel_info,
 			      new_fee_states(ld->wallet, LOCAL, &feerate),
-			      NULL, /* No shutdown_scriptpubkey[REMOTE] yet */
+			      NULL, /* No shutdown_scriptpubkey[REMOTE] */
 			      NULL,
 			      1, false,
-			      NULL, /* No commit sent yet */
+			      NULL, /* No commit sent */
 			      /* If we're fundee, could be a little before this
 			       * in theory, but it's only used for timing out. */
 			      get_network_blockheight(ld->topology),
-			      100, 10000,
-			      /* We are connected */
+			      FEERATE_FLOOR, 
+				  /* Raw: convert to feerate */
+				  funding_sats.satoshis / MINIMUM_TX_WEIGHT * 1000,
 			      false,
 			      &basepoints,
 			   	  &localFundingPubkey,
@@ -1312,7 +1315,7 @@ static struct channel *stub_chan(struct command *cmd,
 			      ld->config.fee_per_satoshi,
 			      NULL,
 			      0, 0,
-			      channel_type_static_remotekey(NULL),
+			      type,
 			      NUM_SIDES, /* closer not yet known */
 			      REASON_REMOTE,
 			      NULL,
@@ -1334,25 +1337,35 @@ static struct command_result *json_commit_channel(struct command *cmd,
 	struct channel_id cid;
 	struct bitcoin_outpoint funding;
 	struct wireaddr_internal addr;
-	const char *scb;
+	struct amount_sat funding_sats;
+	struct channel_type *type;
+	const jsmntok_t *scb, *t;
+	size_t i;
+	struct json_stream *response;
 
 	if (!param(cmd, buffer, params,
-		p_req("scb", param_string, &scb),
+		p_req("scb", param_array, &scb),
 		NULL))
 		return command_param_failed();
-	char *copy = strdup(scb);
 
-	char *token = strtok(copy, ",");
-	while(token != NULL){
+	response = json_stream_success(cmd);
 
+	json_array_start(response, "stubs");
+	json_for_each_arr(i,t,scb){
+
+		char *token = json_strdup(tmpctx, buffer, t);
 		u8 *scb_arr = tal_hexdata(cmd, token, strlen(token));
-		if(!fromwire_static_chan_backup(scb_arr, 
+
+		if(!fromwire_static_chan_backup(scb_arr,
+										scb_arr,
 										&id, 
 										&cid, 
 										&nodeid, 
 										&addr, 
-										&funding)){
-			/* FIXME: INSERT BROKEN STATEMENT HERE!*/
+										&funding,
+										&funding_sats,
+										&type)){
+			log_broken(cmd->ld->log, "SCB is invalid!");
 		};
 
 		struct lightningd *ld = cmd->ld;
@@ -1361,22 +1374,24 @@ static struct command_result *json_commit_channel(struct command *cmd,
 									nodeid, 
 									cid,
 									funding,
-									addr);
+									addr,
+									funding_sats,
+									type);
 		
 		/* Now we put this in the database. */
 		wallet_channel_insert(ld->wallet, channel);
 
 		/* Watch the Funding */
 		channel_watch_funding(ld, channel);
-		token = strtok(NULL, ",");
+
+		json_add_channel_id(response, NULL, &cid);
 	}
 	
-	struct json_stream *response;
-	
-	response = json_stream_success(cmd);
+	/* This will try to reconnect to the peers and start
+	* initiating the process */
+	setup_peers(cmd->ld);
 
-	json_add_string(response, "Status:",
-					"Stubbed Channel...");
+	json_array_end(response);
 
 	return command_success(cmd, response);
 }
@@ -1408,11 +1423,11 @@ static const struct json_command fundchannel_complete_command = {
 AUTODATA(json_command, &fundchannel_complete_command);
 
 static const struct json_command json_commitchan_command = {
-    "emergencystubchannel",
+    "recoverchannel",
     "channels",
     json_commit_channel,
     "Populate the DB with a channel and peer"
 	"Used for recovering the channel using DLP."
-	"This needs param in the form of CSV scb messages (scb1,scb2,...)"
+	"This needs param in the form of an array [scb1,scb2,...]"
 };
 AUTODATA(json_command, &json_commitchan_command);
