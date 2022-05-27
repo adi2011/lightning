@@ -155,6 +155,7 @@ static struct command_result *json_getsecret(struct command *cmd,
 	
 	const char *info;
 	struct json_stream *response;
+	
 	if (!param(cmd, buffer, params,
 		   p_req("info", param_string, &info),
 		   NULL))
@@ -172,15 +173,15 @@ static struct command_result *json_getsecret(struct command *cmd,
 		fatal("Bad reply from HSM: %s", tal_hex(tmpctx, msg));
 
 	response = json_stream_success(cmd);
-	json_add_secret(response, "Secret_Key", &secret);
+	json_add_secret(response, "secret", &secret);
 	return command_success(cmd, response);
 }
 
 static const struct json_command getsecret_command = {
-	"getsecret",
+	"makesecret",
 	"utility",
 	&json_getsecret,
-	"Get the secret key to encrypt the SCB file."
+	"Get a pseudorandom secret key, using an info string."
 };
 AUTODATA(json_command, &getsecret_command);
 
