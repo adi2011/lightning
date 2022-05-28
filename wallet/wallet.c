@@ -1278,6 +1278,7 @@ static struct channel *wallet_stmt2channel(struct wallet *w, struct db_stmt *stm
 			return NULL;
 		}
 	}
+
 	if (!db_col_is_null(stmt, "short_channel_id")) {
 		scid = tal(tmpctx, struct short_channel_id);
 		if (!db_col_short_channel_id_str(stmt, "short_channel_id", scid))
@@ -1488,6 +1489,7 @@ static struct channel *wallet_stmt2channel(struct wallet *w, struct db_stmt *stm
 		tal_free(chan);
 		return NULL;
 	}
+	
 	return chan;
 }
 
