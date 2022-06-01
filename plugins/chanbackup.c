@@ -24,7 +24,7 @@
 struct secret secret;
 
 /* Helper to fetch out SCB from the RPC call */
-static bool json_to_str (const char *buffer, const jsmntok_t *tok,
+static bool json_to_str(const char *buffer, const jsmntok_t *tok,
 			const char **t)
 {
 	*t = json_strdup(tmpctx, buffer, tok);
@@ -32,8 +32,8 @@ static bool json_to_str (const char *buffer, const jsmntok_t *tok,
 }
 
 /* This writes encrypted scb in the file */
-static void write_hsm (struct plugin *p, int fd, 
-						const char *buf)
+static void write_hsm(struct plugin *p, int fd, 
+					 const char *buf)
 {
 	u8 *point = tal_dup_arr(buf, u8, (u8 *)buf, strlen(buf), 0);
 
@@ -60,23 +60,22 @@ static void write_hsm (struct plugin *p, int fd,
 						       NULL, 0, 0))
 		return;
 	
-	if (!write_all(fd, final, tal_bytelen(final))) {
+	if (!write_all(fd, final, tal_bytelen(final)))
 			unlink_noerr("scb.tmp");
-	}
+
 }
 
 /* checks if the SCB file exists, creates a new one in case it doesn't. */
-static void maybe_create_new_scb (struct plugin *p, const char *scb_buf)
+static void maybe_create_new_scb(struct plugin *p, const char *scb_buf)
 {
 
 	/* Note that this is opened for write-only, even though the permissions
 	 * are set to read-only.  That's perfectly valid! */
 	int fd = open("scb", O_CREAT|O_EXCL|O_WRONLY, 0400);
-	if (fd < 0) {
+	if (fd < 0)
 		/* If this is not the first time we've run, it will exist. */
 		if (errno == EEXIST)
 			return;
-	}
 
 	/* Comes here only if the file haven't existed before */
 	unlink_noerr("scb");
@@ -88,25 +87,24 @@ static void maybe_create_new_scb (struct plugin *p, const char *scb_buf)
 	write_hsm(p, fd, scb_buf);
 
 	/* fsync (mostly!) ensures that the file has reached the disk. */
-	if (fsync(fd) != 0) {
+	if (fsync(fd) != 0)
 		unlink_noerr("scb.tmp");
-	}
 
 	/* This should never fail if fsync succeeded.  But paranoia good, and
 	 * bugs exist. */
-	if (close(fd) != 0) {
+	if (close(fd) != 0)
 		unlink_noerr("scb.tmp");
-	}
+
 	/* We actually need to sync the *directory itself* to make sure the
 	 * file exists!  You're only allowed to open directories read-only in
 	 * modern Unix though. */
 	fd = open(".", O_RDONLY);
-	if (fd < 0) {
+	if (fd < 0)
 		plugin_log(p, LOG_DBG, "Opening: %s", strerror(errno));
-	}
-	if (fsync(fd) != 0) {
+
+	if (fsync(fd) != 0)
 		unlink_noerr("scb.tmp");
-	}
+
 	close(fd);
 
 	/* This will update the scb file */
@@ -115,7 +113,7 @@ static void maybe_create_new_scb (struct plugin *p, const char *scb_buf)
 
 
 /* Returns decrypted SCB in form of a u8 array */
-static u8 *decrypt_scb (struct plugin *p)
+static u8 *decrypt_scb(struct plugin *p)
 {
 	struct stat st;
 	int fd = open("scb", O_RDONLY);
@@ -158,7 +156,7 @@ static u8 *decrypt_scb (struct plugin *p)
 	return ans;
 }
 
-static struct command_result *after_recover_rpc (struct command *cmd,
+static struct command_result *after_recover_rpc(struct command *cmd,
 					 const char *buf,
 					 const jsmntok_t *params,
 					 void *cb_arg UNUSED)
@@ -177,7 +175,7 @@ static struct command_result *after_recover_rpc (struct command *cmd,
 }
 
 /* Recovers the channels by making RPC to `recoverchannel` */
-static struct command_result *recover (struct command *cmd,
+static struct command_result *recover(struct command *cmd,
 					      const char *buf,
 					      const jsmntok_t *params)
 {
@@ -192,14 +190,15 @@ static struct command_result *recover (struct command *cmd,
 				    after_recover_rpc,
 				    &forward_error, NULL);
 	
-	const jsmntok_t *restok = json_parse_simple(tmpctx, res, strlen(res));
+	const jsmntok_t *restok;
+	restok = json_parse_simple(tmpctx, res, strlen(res));
 
 	json_add_tok(req->js, "scb", restok, res);
 
 	return send_outreq(cmd->plugin, req);
 }
 
-static void update_scb (struct plugin *p, const char *scb_buf)
+static void update_scb(struct plugin *p, const char *scb_buf)
 {
 
 	/* If the temp file existed before, remove it */
@@ -237,7 +236,7 @@ static void update_scb (struct plugin *p, const char *scb_buf)
 }
 
 
-static struct command_result *after_staticbackup (struct command *cmd,
+static struct command_result *after_staticbackup(struct command *cmd,
 					 const char *buf,
 					 const jsmntok_t *params,
 					 void *cb_arg UNUSED)
@@ -251,7 +250,7 @@ static struct command_result *after_staticbackup (struct command *cmd,
 	return notification_handled(cmd);
 }
 
-static struct command_result *json_state_changed (struct command *cmd,
+static struct command_result *json_state_changed(struct command *cmd,
 					     const char *buf,
 					     const jsmntok_t *params)
 {
@@ -278,7 +277,7 @@ static struct command_result *json_state_changed (struct command *cmd,
 	return notification_handled(cmd);
 }
 
-static const char *init (struct plugin *p,
+static const char *init(struct plugin *p,
 			const char *buf UNUSED,
 			const jsmntok_t *config UNUSED)
 {

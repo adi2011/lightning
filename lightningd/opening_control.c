@@ -1204,20 +1204,20 @@ static struct command_result *json_fundchannel_start(struct command *cmd,
 }
 
 static struct channel *stub_chan(struct command *cmd,
-								u64 id,
-								struct node_id nodeid, 
-								struct channel_id cid,
-								struct bitcoin_outpoint funding,
-								struct wireaddr_internal addr,
-								struct amount_sat funding_sats,
-								struct channel_type *type)
+						 u64 id,
+						 struct node_id nodeid, 
+						 struct channel_id cid,
+						 struct bitcoin_outpoint funding,
+						 struct wireaddr_internal addr,
+						 struct amount_sat funding_sats,
+						 struct channel_type *type)
 {
 	struct peer *peer;
 	peer = new_peer(cmd->ld,
-					0,
-					&nodeid,
-					&addr,
-					false);
+				 0,
+				 &nodeid,
+				 &addr,
+				 false);
 	
 	struct lightningd *ld = cmd->ld;
 	

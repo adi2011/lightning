@@ -673,10 +673,9 @@ enum watch_result onchaind_funding_spent(struct channel *channel,
 	/* This could be a mutual close, but it doesn't matter. 
 	 * We don't need this for stub channels as well */
 	if (!is_stub_scid(channel->scid))
-	{
 		bitcoin_txid(channel->last_tx, &our_last_txid);
-	}
-	
+
+
 	/* We try to get the feerate for each transaction type, 0 if estimation
 	 * failed. */
 	feerates[0] = delayed_to_us_feerate(ld->topology);

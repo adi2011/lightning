@@ -4,6 +4,7 @@
 #include <common/ecdh.h>
 #include <common/errcode.h>
 #include <common/hsm_encryption.h>
+#include <common/json_command.h>
 #include <common/json_helpers.h>
 #include <common/json_tok.h>
 #include <common/param.h>
@@ -155,22 +156,26 @@ static struct command_result *json_getsecret(struct command *cmd,
 	
 	const char *info;
 	struct json_stream *response;
+	struct secret secret;
 	
 	if (!param(cmd, buffer, params,
 		   p_req("info", param_string, &info),
 		   NULL))
 		return command_param_failed();
 
-	u8 *point = tal_dup_arr(cmd, u8, (u8 *)info, strlen(info), 0);
+	u8 *point = tal_dup_arr(cmd, u8, (u8*)info, strlen(info), 0);
 
 	u8 *msg = towire_hsmd_derive_secret(cmd, point);
 	if (!wire_sync_write(cmd->ld->hsm_fd, take(msg)))
-		fatal("Could not write to HSM: %s", strerror(errno));
+		return command_fail(cmd, LIGHTNINGD,
+                     "Could not write to HSM: %s", strerror(errno));
+
 
 	msg = wire_sync_read(tmpctx, cmd->ld->hsm_fd);
-	struct secret secret;
 	if (!fromwire_hsmd_derive_secret_reply(msg, &secret))
-		fatal("Bad reply from HSM: %s", tal_hex(tmpctx, msg));
+		return command_fail(cmd, LIGHTNINGD,
+                     "Bad reply from HSM: %s", strerror(errno));
+
 
 	response = json_stream_success(cmd);
 	json_add_secret(response, "secret", &secret);
