@@ -7,6 +7,7 @@
 #include <ccan/tal/str/str.h>
 #include <ccan/json_out/json_out.h>
 #include <ccan/cast/cast.h>
+#include <ccan/time/time.h>
 #include <ccan/mem/mem.h>
 #include <ccan/str/hex/hex.h>
 #include <common/json_tok.h>
@@ -14,12 +15,16 @@
 #include <common/json_stream.h>
 #include <common/hsm_encryption.h>
 #include <common/type_to_string.h>
+#include <common/scb_wiregen.h>
 #include <plugins/libplugin.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <sodium.h>
 
+/* FIXME: remove redundant header files. (Ignore for now) */
+
+#define VERSION ((u64)1)
 /* Global secret object to keep the derived encryption key for the SCB */
 struct secret secret;
 
@@ -35,10 +40,33 @@ static bool json_to_str(const char *buffer, const jsmntok_t *tok,
 static void write_hsm(struct plugin *p, int fd, 
 					 const char *buf)
 {
-	u8 *point = tal_dup_arr(buf, u8, (u8 *)buf, strlen(buf), 0);
+	struct scb_chan *scb_chan_arr = tal_arr(buf, struct scb_chan, 0),
+					*scb_chan = tal(buf, struct scb_chan);
+	const jsmntok_t *scbtok = json_parse_simple(buf, buf, strlen(buf)), *t;
+	size_t i;
+	u32 timestamp = time_now().ts.tv_sec;
+
+	json_for_each_arr(i, t, scbtok){
+		const u8 *scb_tmp = tal_hexdata(buf, json_strdup(tmpctx, buf, t), 
+											strlen(json_strdup(tmpctx, buf, t)));
+		size_t scblen_tmp = tal_count(scb_tmp);
+
+		scb_chan = fromwire_scb_chan(buf, &scb_tmp, &scblen_tmp);
+		if(scb_tmp == NULL){
+			plugin_err(p, "Something went wrong!");
+		}
+		
+		plugin_log(p, LOG_DBG, "--%s--", type_to_string(tmpctx, struct channel_id, &scb_chan->cid));
+		tal_arr_expand(&scb_chan_arr, *scb_chan);
+	}
+
+	/* FIXME: HELP!! Gives error */
+	u8 *point = towire_static_chan_backup(buf, VERSION, timestamp, (const struct scb_chan **)&scb_chan_arr);
+
+	plugin_log(p, LOG_DBG ,"encrypted --%s--------", tal_hexstr(tmpctx, point, tal_bytelen(point)));
 
 	u8 *final = tal_arr(buf, 
-						u8, 
+						u8,
 						tal_bytelen(point) + 
 							crypto_secretstream_xchacha20poly1305_ABYTES + 
 							crypto_secretstream_xchacha20poly1305_HEADERBYTES
@@ -47,8 +75,10 @@ static void write_hsm(struct plugin *p, int fd,
 	crypto_secretstream_xchacha20poly1305_state crypto_state;
 
 	if (crypto_secretstream_xchacha20poly1305_init_push(&crypto_state, final,
-								(&secret)->data) != 0)
+								(&secret)->data) != 0) {
+		plugin_err(p, "Can't encrypt the data!");
 		return;
+	}
 	
 	if (crypto_secretstream_xchacha20poly1305_push(
 							   &crypto_state,
@@ -57,11 +87,15 @@ static void write_hsm(struct plugin *p, int fd,
 						       NULL, point,
 						       tal_bytelen(point),
 						       /* Additional data and tag */
-						       NULL, 0, 0))
+						       NULL, 0, 0)) {
+		plugin_err(p, "Can't encrypt the data!");
 		return;
+	}
 	
-	if (!write_all(fd, final, tal_bytelen(final)))
+	if (!write_all(fd, final, tal_bytelen(final))) {
 			unlink_noerr("scb.tmp");
+			plugin_err(p, "Writing encrypted SCB: %s", strerror(errno));
+	}
 
 }
 
@@ -72,10 +106,12 @@ static void maybe_create_new_scb(struct plugin *p, const char *scb_buf)
 	/* Note that this is opened for write-only, even though the permissions
 	 * are set to read-only.  That's perfectly valid! */
 	int fd = open("scb", O_CREAT|O_EXCL|O_WRONLY, 0400);
-	if (fd < 0)
-		/* If this is not the first time we've run, it will exist. */
+	if (fd < 0) {
+		/* Don't do anything if the file already exists. */
 		if (errno == EEXIST)
 			return;
+		plugin_err(p, "creating: %s", strerror(errno));
+	}
 
 	/* Comes here only if the file haven't existed before */
 	unlink_noerr("scb");
@@ -83,28 +119,37 @@ static void maybe_create_new_scb(struct plugin *p, const char *scb_buf)
 	/* This couldn't give EEXIST because we call unlink_noerr("scb.tmp") 
 	 * in INIT */
 	fd = open("scb.tmp", O_CREAT|O_EXCL|O_WRONLY, 0400);
-
+	if (fd < 0)
+		plugin_err(p, "Opening: %s", strerror(errno));
+	
 	write_hsm(p, fd, scb_buf);
 
 	/* fsync (mostly!) ensures that the file has reached the disk. */
-	if (fsync(fd) != 0)
+	if (fsync(fd) != 0) {
 		unlink_noerr("scb.tmp");
+		plugin_err(p, "fsync : %s", strerror(errno));
+	}
 
 	/* This should never fail if fsync succeeded.  But paranoia good, and
 	 * bugs exist. */
-	if (close(fd) != 0)
+	if (close(fd) != 0) {
 		unlink_noerr("scb.tmp");
+		plugin_err(p, "closing: %s", strerror(errno));
+	}
 
 	/* We actually need to sync the *directory itself* to make sure the
 	 * file exists!  You're only allowed to open directories read-only in
 	 * modern Unix though. */
 	fd = open(".", O_RDONLY);
 	if (fd < 0)
-		plugin_log(p, LOG_DBG, "Opening: %s", strerror(errno));
+		plugin_err(p, "Opening: %s", strerror(errno));
 
-	if (fsync(fd) != 0)
+	if (fsync(fd) != 0) {
 		unlink_noerr("scb.tmp");
+		plugin_err(p, "closing: %s", strerror(errno));
+	}
 
+	/* This will never fail, if fsync worked! */
 	close(fd);
 
 	/* This will update the scb file */
@@ -118,10 +163,8 @@ static u8 *decrypt_scb(struct plugin *p)
 	struct stat st;
 	int fd = open("scb", O_RDONLY);
 
-	if (stat("scb", &st) != 0){
-		plugin_log(p, LOG_DBG, "SCB file is corrupted!: %s", strerror(errno));
-		return NULL;	
-	}
+	if (stat("scb", &st) != 0) 
+		plugin_err(p, "SCB file is corrupted!: %s", strerror(errno));
 
 	u8 final[st.st_size];
 
@@ -132,14 +175,17 @@ static u8 *decrypt_scb(struct plugin *p)
 	
 	crypto_secretstream_xchacha20poly1305_state crypto_state;
 
+	if (st.st_size < crypto_secretstream_xchacha20poly1305_ABYTES) 
+		plugin_err(p, "SCB file is corrupted!");
+	
 	u8 *ans = tal_arr(tmpctx, u8, st.st_size - 
-						crypto_secretstream_xchacha20poly1305_ABYTES);
+						crypto_secretstream_xchacha20poly1305_ABYTES -
+						crypto_secretstream_xchacha20poly1305_HEADERBYTES);
 
 	/* The header part */
 	if (crypto_secretstream_xchacha20poly1305_init_pull(&crypto_state, final,
 							    (&secret)->data) != 0){
-		plugin_log(p, LOG_DBG, "SCB file is corrupted!");
-		return 0;
+		plugin_err(p, "SCB file is corrupted!");
 	}
 
 	if (crypto_secretstream_xchacha20poly1305_pull(&crypto_state, ans,
@@ -147,12 +193,13 @@ static u8 *decrypt_scb(struct plugin *p)
 						       final + crypto_secretstream_xchacha20poly1305_HEADERBYTES,
 						       st.st_size - crypto_secretstream_xchacha20poly1305_HEADERBYTES,
 						       NULL, 0) != 0){
-		plugin_log(p, LOG_DBG, "SCB file is corrupted!");
-		return 0;
+		plugin_err(p, "SCB file is corrupted!");
 	}
 	
-	close(fd);
+	if (close(fd) != 0)
+		plugin_err(p, "Closing: %s", strerror(errno));
 
+	plugin_log(p, LOG_DBG ,"decrypted--%s--------", tal_hexstr(tmpctx, ans, tal_bytelen(ans)));
 	return ans;
 }
 
@@ -162,7 +209,7 @@ static struct command_result *after_recover_rpc(struct command *cmd,
 					 void *cb_arg UNUSED)
 {
 
-	int i = 0;
+	size_t i;
 	const jsmntok_t *t;
 	struct json_stream *response;
 
@@ -180,22 +227,35 @@ static struct command_result *recover(struct command *cmd,
 					      const jsmntok_t *params)
 {
 	struct out_req *req;
+	u64 version;
+	u32 timestamp;
+	struct scb_chan **scb;
 
 	if (!param(cmd, buf, params, NULL))
 		return command_param_failed();
 	
-	const char *res = (char *)decrypt_scb(cmd->plugin);
+	u8 *res = decrypt_scb(cmd->plugin);
+
+	plugin_log(cmd->plugin, LOG_DBG ,"--%s--------", tal_hexstr(cmd, res, tal_bytelen(res)));
+
+	if(!fromwire_static_chan_backup(cmd, res, &version, &timestamp, &scb)){
+		plugin_err(cmd->plugin, "Corrupted SCB!");
+	}
+
+	/* FIXME: HELP!
+	 *	Do I need to iterate the `scb` and append the scbs in a JSON array? */
 
 	req = jsonrpc_request_start(cmd->plugin, cmd, "recoverchannel",
 				    after_recover_rpc,
 				    &forward_error, NULL);
 	
-	const jsmntok_t *restok;
-	restok = json_parse_simple(tmpctx, res, strlen(res));
+	// const jsmntok_t *restok;
+	// restok = json_parse_simple(tmpctx, res, strlen(res));
 
-	json_add_tok(req->js, "scb", restok, res);
+	// json_add_tok(req->js, "scb", restok, res);
 
-	return send_outreq(cmd->plugin, req);
+	// return send_outreq(cmd->plugin, req);
+	return command_success(cmd, json_out_obj(cmd, NULL, NULL));
 }
 
 static void update_scb(struct plugin *p, const char *scb_buf)
@@ -205,6 +265,8 @@ static void update_scb(struct plugin *p, const char *scb_buf)
 	unlink_noerr("scb.tmp");
 	
 	int fd = open("scb.tmp", O_CREAT|O_EXCL|O_WRONLY, 0400);
+	if (fd<0)
+		plugin_err(p, "Opening: %s", strerror(errno));
 
 	plugin_log(p, LOG_DBG, "Updating the SCB file...");
 
@@ -241,12 +303,9 @@ static struct command_result *after_staticbackup(struct command *cmd,
 					 const jsmntok_t *params,
 					 void *cb_arg UNUSED)
 {
+	const jsmntok_t *scbs = json_get_member(buf, params, "scb");
 
-	const char *scb_buf =  json_strdup(tmpctx, buf, params);
-	const jsmntok_t *scb_arr = json_parse_simple(tmpctx, scb_buf, strlen(scb_buf)),
-					*scbs = json_get_member(scb_buf, scb_arr, "scb");
-
-	update_scb(cmd->plugin, json_strdup(tmpctx, scb_buf, scbs));
+	update_scb(cmd->plugin, json_strdup(tmpctx, buf, scbs));
 	return notification_handled(cmd);
 }
 
@@ -256,16 +315,15 @@ static struct command_result *json_state_changed(struct command *cmd,
 {
 	const jsmntok_t *notiftok = json_get_member(buf, params, "channel_state_changed");
 	const jsmntok_t *statetok = json_get_member(buf, notiftok, "new_state");
-
-	const char *state = json_strdup(tmpctx, buf, statetok);
-
+	
 	/* FIXME: I wanted to update the file on CHANNELD_AWAITING_LOCKIN,
 	 * But I don't get update for it, maybe because there is no previous_state,
 	 * also apparently `channel_opened` gets published when *peer* funded a channel with us? 
 	 * So, is their no way to get a notif on CHANNELD_AWAITING_LOCKIN? */
-	if(!strcmp(state ,"CLOSED") || !strcmp(state ,"CHANNELD_NORMAL")){
-		plugin_log(cmd->plugin, LOG_INFORM, "Channel closed: Updating the SCB");
+	if (json_tok_streq(buf, statetok, "CLOSED") || 
+		json_tok_streq(buf, statetok, "CHANNELD_NORMAL")) {
 
+		plugin_log(cmd->plugin, LOG_INFORM, "Channel closed: Updating the SCB");
 		struct out_req *req;
 		req = jsonrpc_request_start(cmd->plugin, cmd ,"staticbackup",
 							after_staticbackup, &forward_error, 
