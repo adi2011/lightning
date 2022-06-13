@@ -5,6 +5,7 @@
 #include <common/fee_states.h>
 #include <common/json_command.h>
 #include <common/json_helpers.h>
+#include <common/scb_wiregen.h>
 #include <common/type_to_string.h>
 #include <common/wire_error.h>
 #include <connectd/connectd_wiregen.h>
@@ -416,14 +417,14 @@ struct channel *new_channel(struct peer *peer, u64 dbid,
 	channel->owner = NULL;
 	memset(&channel->billboard, 0, sizeof(channel->billboard));
 	channel->billboard.transient = tal_strdup(channel, transient_billboard);
-	channel->scb = tal(channel, struct scb);
+	channel->scb = tal(channel, struct scb_chan);
 	channel->scb->id = dbid;
 	channel->scb->addr = peer->addr;
 	channel->scb->node_id = peer->id;
 	channel->scb->funding = *funding;
 	channel->scb->cid = *cid;
 	channel->scb->funding_sats = funding_sats;
-	channel->scb->type = tal_steal(channel, type);
+	channel->scb->type = (struct channel_type *) type;
 
 	if (!log) {
 		channel->log = new_log(channel,

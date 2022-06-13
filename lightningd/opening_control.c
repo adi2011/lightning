@@ -1332,16 +1332,10 @@ static struct command_result *json_commit_channel(struct command *cmd,
 						     const jsmntok_t *obj UNNEEDED,
 						     const jsmntok_t *params)
 {
-	u64 id;
-	struct node_id nodeid;
-	struct channel_id cid;
-	struct bitcoin_outpoint funding;
-	struct wireaddr_internal addr;
-	struct amount_sat funding_sats;
-	struct channel_type *type;
 	const jsmntok_t *scb, *t;
 	size_t i;
 	struct json_stream *response;
+	struct scb_chan *scb_chan = tal(cmd, struct scb_chan);
 
 	if (!param(cmd, buffer, params,
 		p_req("scb", param_array, &scb),
@@ -1354,29 +1348,24 @@ static struct command_result *json_commit_channel(struct command *cmd,
 	json_for_each_arr(i,t,scb){
 
 		char *token = json_strdup(tmpctx, buffer, t);
-		u8 *scb_arr = tal_hexdata(cmd, token, strlen(token));
+		const u8 *scb_arr = tal_hexdata(cmd, token, strlen(token));
+		size_t scblen = tal_count(scb_arr);
 
-		if(!fromwire_static_chan_backup(scb_arr,
-										scb_arr,
-										&id, 
-										&cid, 
-										&nodeid, 
-										&addr, 
-										&funding,
-										&funding_sats,
-										&type)){
+		scb_chan = fromwire_scb_chan(cmd ,&scb_arr, &scblen);
+		if (scb_arr == NULL) {
 			log_broken(cmd->ld->log, "SCB is invalid!");
-		};
+			return;
+		}
 
 		struct lightningd *ld = cmd->ld;
 		struct channel *channel= stub_chan(cmd,
-									id,
-									nodeid, 
-									cid,
-									funding,
-									addr,
-									funding_sats,
-									type);
+									scb_chan->id,
+									scb_chan->node_id, 
+									scb_chan->cid,
+									scb_chan->funding,
+									scb_chan->addr,
+									scb_chan->funding_sats,
+									scb_chan->type);
 		
 		/* Now we put this in the database. */
 		wallet_channel_insert(ld->wallet, channel);
@@ -1384,7 +1373,7 @@ static struct command_result *json_commit_channel(struct command *cmd,
 		/* Watch the Funding */
 		channel_watch_funding(ld, channel);
 
-		json_add_channel_id(response, NULL, &cid);
+		json_add_channel_id(response, NULL, &scb_chan->cid);
 	}
 	
 	/* This will try to reconnect to the peers and start

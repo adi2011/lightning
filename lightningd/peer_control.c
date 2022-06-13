@@ -1755,25 +1755,19 @@ static const struct json_command listpeers_command = {
 /* Comment added to satisfice AUTODATA */
 AUTODATA(json_command, &listpeers_command);
 
-static void json_add_scb(struct lightningd *ld,
+static void json_add_scb(struct command *cmd,
 			  struct json_stream *response,
 			  struct channel *c)
 {
-	u8 *scb = towire_static_chan_backup(tmpctx,
-									c->scb->id,
-									&c->scb->cid,
-									&c->scb->node_id,
-									&c->scb->addr,
-									&c->scb->funding,
-									c->scb->funding_sats,
-									c->scb->type);
+	u8 *scb = tal_arr(cmd, u8, 0);
 
+	towire_scb_chan(&scb, c->scb);
 	json_add_hex_talarr(response, NULL,
 			scb);
 }
 
-/*This will return a SCB for all the channels currently loaded 
-	in the in-memory channel*/
+/* This will return a SCB for all the channels currently loaded 
+	in the in-memory channel */
 static struct command_result *json_hex_scb(struct command *cmd,
 					     const char *buffer,
 					     const jsmntok_t *obj UNNEEDED,
@@ -1793,7 +1787,7 @@ static struct command_result *json_hex_scb(struct command *cmd,
 
 	list_for_each(&cmd->ld->peers, peer, list)
 		list_for_each(&peer->channels, channel, list)
-			json_add_scb(cmd->ld, response, channel);
+			json_add_scb(cmd, response, channel);
 
 	json_array_end(response);
 

@@ -113,6 +113,9 @@ COMMON_SRC := $(COMMON_SRC_NOGEN) $(COMMON_SRC_GEN)
 
 COMMON_OBJS := $(COMMON_SRC:.c=.o)
 
+common/scb_wiregen.h_args := -s
+common/scb_wiregen.c_args := -s
+
 # Check that all h and c files are in the Makefile!
 check-common-files:
 	@$(call VERBOSE, "MISSING-SRC common", [ "$(filter-out $(COMMON_SRC), $(wildcard common/*.c))" = "" ])

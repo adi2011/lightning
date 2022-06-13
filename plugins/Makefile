@@ -145,6 +145,7 @@ PLUGIN_COMMON_OBJS :=				\
 	common/psbt_open.o			\
 	common/pseudorand.o			\
 	common/random_select.o			\
+	common/scb_wiregen.o		\
 	common/setup.o				\
 	common/status_levels.o			\
 	common/type_to_string.o			\
