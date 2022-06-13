@@ -244,7 +244,6 @@ class Type(FieldSet):
         'tx_parts',
         'wally_psbt',
         'wally_tx',
-        'channel_type',
     ]
 
     # Some BOLT types are re-typed based on their field name
