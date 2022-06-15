@@ -1352,8 +1352,10 @@ static struct command_result *json_commit_channel(struct command *cmd,
 		size_t scblen = tal_count(scb_arr);
 
 		scb_chan = fromwire_scb_chan(cmd ,&scb_arr, &scblen);
+
 		if (scb_chan == NULL) {
 			log_broken(cmd->ld->log, "SCB is invalid!");
+
 		}
 
 		struct lightningd *ld = cmd->ld;
@@ -1365,6 +1367,7 @@ static struct command_result *json_commit_channel(struct command *cmd,
 									scb_chan->addr,
 									scb_chan->funding_sats,
 									scb_chan->type);
+
 
 		/* Now we put this in the database. */
 		wallet_channel_insert(ld->wallet, channel);
