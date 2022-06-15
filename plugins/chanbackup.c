@@ -1,30 +1,25 @@
 #include "config.h"
 #include <ccan/array_size/array_size.h>
-#include <ccan/read_write_all/read_write_all.h>
-#include <ccan/noerr/noerr.h>
 #include <ccan/err/err.h>
-#include <ccan/fdpass/fdpass.h>
-#include <ccan/tal/str/str.h>
 #include <ccan/json_out/json_out.h>
-#include <ccan/cast/cast.h>
+#include <ccan/noerr/noerr.h>
+#include <ccan/read_write_all/read_write_all.h>
+#include <ccan/tal/str/str.h>
 #include <ccan/time/time.h>
-#include <ccan/mem/mem.h>
-#include <ccan/str/hex/hex.h>
-#include <common/json_tok.h>
+#include <common/hsm_encryption.h>
 #include <common/json.h>
 #include <common/json_stream.h>
-#include <common/hsm_encryption.h>
-#include <common/type_to_string.h>
+#include <common/json_tok.h>
 #include <common/scb_wiregen.h>
-#include <plugins/libplugin.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <unistd.h>
+#include <plugins/libplugin.h>
 #include <sodium.h>
+#include <unistd.h>
 
-/* FIXME: remove redundant header files. (Ignore for now) */
-
+/* VERSION is the current version of the data encrypted in the file */
 #define VERSION ((u64)1)
+
 /* Global secret object to keep the derived encryption key for the SCB */
 struct secret secret;
 
@@ -36,34 +31,30 @@ static bool json_to_str(const char *buffer, const jsmntok_t *tok,
 	return true;
 }
 
-/* This writes encrypted scb in the file */
+/* This writes encrypted static backup in the recovery file */
 static void write_hsm(struct plugin *p, int fd, 
 					 const char *buf)
 {
-	struct scb_chan *scb_chan_arr = tal_arr(buf, struct scb_chan, 0),
-					*scb_chan = tal(buf, struct scb_chan);
+	const struct scb_chan **scb_chan_arr = tal_arr(buf, const struct scb_chan *, 0);
 	const jsmntok_t *scbtok = json_parse_simple(buf, buf, strlen(buf)), *t;
 	size_t i;
 	u32 timestamp = time_now().ts.tv_sec;
 
 	json_for_each_arr(i, t, scbtok){
+		struct scb_chan *scb_chan;
 		const u8 *scb_tmp = tal_hexdata(buf, json_strdup(tmpctx, buf, t), 
 											strlen(json_strdup(tmpctx, buf, t)));
 		size_t scblen_tmp = tal_count(scb_tmp);
 
 		scb_chan = fromwire_scb_chan(buf, &scb_tmp, &scblen_tmp);
-		if(scb_tmp == NULL){
+		if(scb_chan == NULL){
 			plugin_err(p, "Something went wrong!");
 		}
 		
-		plugin_log(p, LOG_DBG, "--%s--", type_to_string(tmpctx, struct channel_id, &scb_chan->cid));
-		tal_arr_expand(&scb_chan_arr, *scb_chan);
+		tal_arr_expand(&scb_chan_arr, scb_chan);
 	}
 
-	/* FIXME: HELP!! Gives error */
-	u8 *point = towire_static_chan_backup(buf, VERSION, timestamp, (const struct scb_chan **)&scb_chan_arr);
-
-	plugin_log(p, LOG_DBG ,"encrypted --%s--------", tal_hexstr(tmpctx, point, tal_bytelen(point)));
+	u8 *point = towire_static_chan_backup(buf, VERSION, timestamp, scb_chan_arr);
 
 	u8 *final = tal_arr(buf, 
 						u8,
@@ -105,7 +96,7 @@ static void maybe_create_new_scb(struct plugin *p, const char *scb_buf)
 
 	/* Note that this is opened for write-only, even though the permissions
 	 * are set to read-only.  That's perfectly valid! */
-	int fd = open("scb", O_CREAT|O_EXCL|O_WRONLY, 0400);
+	int fd = open("emergency.recover", O_CREAT|O_EXCL|O_WRONLY, 0400);
 	if (fd < 0) {
 		/* Don't do anything if the file already exists. */
 		if (errno == EEXIST)
@@ -114,13 +105,15 @@ static void maybe_create_new_scb(struct plugin *p, const char *scb_buf)
 	}
 
 	/* Comes here only if the file haven't existed before */
-	unlink_noerr("scb");
+	unlink_noerr("emergency.recover");
 	
 	/* This couldn't give EEXIST because we call unlink_noerr("scb.tmp") 
 	 * in INIT */
 	fd = open("scb.tmp", O_CREAT|O_EXCL|O_WRONLY, 0400);
 	if (fd < 0)
 		plugin_err(p, "Opening: %s", strerror(errno));
+
+	plugin_log(p, LOG_INFORM, "Creating Emergency Recovery");
 	
 	write_hsm(p, fd, scb_buf);
 
@@ -153,7 +146,7 @@ static void maybe_create_new_scb(struct plugin *p, const char *scb_buf)
 	close(fd);
 
 	/* This will update the scb file */
-	rename("scb.tmp", "scb");
+	rename("scb.tmp", "emergency.recover");
 }
 
 
@@ -161,9 +154,9 @@ static void maybe_create_new_scb(struct plugin *p, const char *scb_buf)
 static u8 *decrypt_scb(struct plugin *p)
 {
 	struct stat st;
-	int fd = open("scb", O_RDONLY);
+	int fd = open("emergency.recover", O_RDONLY);
 
-	if (stat("scb", &st) != 0) 
+	if (stat("emergency.recover", &st) != 0) 
 		plugin_err(p, "SCB file is corrupted!: %s", strerror(errno));
 
 	u8 final[st.st_size];
@@ -175,7 +168,8 @@ static u8 *decrypt_scb(struct plugin *p)
 	
 	crypto_secretstream_xchacha20poly1305_state crypto_state;
 
-	if (st.st_size < crypto_secretstream_xchacha20poly1305_ABYTES) 
+	if (st.st_size < crypto_secretstream_xchacha20poly1305_ABYTES +
+					crypto_secretstream_xchacha20poly1305_HEADERBYTES) 
 		plugin_err(p, "SCB file is corrupted!");
 	
 	u8 *ans = tal_arr(tmpctx, u8, st.st_size - 
@@ -190,8 +184,10 @@ static u8 *decrypt_scb(struct plugin *p)
 
 	if (crypto_secretstream_xchacha20poly1305_pull(&crypto_state, ans,
 						       NULL, 0,
-						       final + crypto_secretstream_xchacha20poly1305_HEADERBYTES,
-						       st.st_size - crypto_secretstream_xchacha20poly1305_HEADERBYTES,
+						       final + 
+							   crypto_secretstream_xchacha20poly1305_HEADERBYTES,
+						       st.st_size - 
+							   crypto_secretstream_xchacha20poly1305_HEADERBYTES,
 						       NULL, 0) != 0){
 		plugin_err(p, "SCB file is corrupted!");
 	}
@@ -199,7 +195,6 @@ static u8 *decrypt_scb(struct plugin *p)
 	if (close(fd) != 0)
 		plugin_err(p, "Closing: %s", strerror(errno));
 
-	plugin_log(p, LOG_DBG ,"decrypted--%s--------", tal_hexstr(tmpctx, ans, tal_bytelen(ans)));
 	return ans;
 }
 
@@ -236,26 +231,27 @@ static struct command_result *recover(struct command *cmd,
 	
 	u8 *res = decrypt_scb(cmd->plugin);
 
-	plugin_log(cmd->plugin, LOG_DBG ,"--%s--------", tal_hexstr(cmd, res, tal_bytelen(res)));
-
-	if(!fromwire_static_chan_backup(cmd, res, &version, &timestamp, &scb)){
+	if (!fromwire_static_chan_backup(cmd, res, &version, &timestamp, &scb)) {
 		plugin_err(cmd->plugin, "Corrupted SCB!");
 	}
 
-	/* FIXME: HELP!
-	 *	Do I need to iterate the `scb` and append the scbs in a JSON array? */
+	if (version != VERSION) {
+		plugin_err(cmd->plugin, "Incompatible version, Contact the admin!");
+	}
 
 	req = jsonrpc_request_start(cmd->plugin, cmd, "recoverchannel",
-				    after_recover_rpc,
-				    &forward_error, NULL);
-	
-	// const jsmntok_t *restok;
-	// restok = json_parse_simple(tmpctx, res, strlen(res));
+				after_recover_rpc,
+				&forward_error, NULL);
 
-	// json_add_tok(req->js, "scb", restok, res);
+	json_array_start(req->js, "scb");
+	for (size_t i=0; i<tal_count(scb); i++){
+		u8 *scb_hex = tal_arr(cmd, u8, 0);
+		towire_scb_chan(&scb_hex,scb[i]);
+		json_add_hex(req->js, NULL, scb_hex, tal_bytelen(scb_hex));
+	}	
+	json_array_end(req->js);
 
-	// return send_outreq(cmd->plugin, req);
-	return command_success(cmd, json_out_obj(cmd, NULL, NULL));
+	return send_outreq(cmd->plugin, req);
 }
 
 static void update_scb(struct plugin *p, const char *scb_buf)
@@ -293,10 +289,9 @@ static void update_scb(struct plugin *p, const char *scb_buf)
 		unlink_noerr("scb.tmp");
 	}
 	close(fd);
-
-	rename("scb.tmp", "scb");
+	unlink_noerr("emergency.recover");
+	rename("scb.tmp", "emergency.recover");
 }
-
 
 static struct command_result *after_staticbackup(struct command *cmd,
 					 const char *buf,
@@ -304,6 +299,7 @@ static struct command_result *after_staticbackup(struct command *cmd,
 					 void *cb_arg UNUSED)
 {
 	const jsmntok_t *scbs = json_get_member(buf, params, "scb");
+	plugin_log(cmd->plugin, LOG_INFORM, "Updating the SCB");
 
 	update_scb(cmd->plugin, json_strdup(tmpctx, buf, scbs));
 	return notification_handled(cmd);
@@ -313,8 +309,10 @@ static struct command_result *json_state_changed(struct command *cmd,
 					     const char *buf,
 					     const jsmntok_t *params)
 {
-	const jsmntok_t *notiftok = json_get_member(buf, params, "channel_state_changed");
-	const jsmntok_t *statetok = json_get_member(buf, notiftok, "new_state");
+	const jsmntok_t *notiftok = json_get_member(buf, 
+										params, 
+										"channel_state_changed"),
+	*statetok = json_get_member(buf, notiftok, "new_state");
 	
 	/* FIXME: I wanted to update the file on CHANNELD_AWAITING_LOCKIN,
 	 * But I don't get update for it, maybe because there is no previous_state,
@@ -323,7 +321,6 @@ static struct command_result *json_state_changed(struct command *cmd,
 	if (json_tok_streq(buf, statetok, "CLOSED") || 
 		json_tok_streq(buf, statetok, "CHANNELD_NORMAL")) {
 
-		plugin_log(cmd->plugin, LOG_INFORM, "Channel closed: Updating the SCB");
 		struct out_req *req;
 		req = jsonrpc_request_start(cmd->plugin, cmd ,"staticbackup",
 							after_staticbackup, &forward_error, 
@@ -358,7 +355,6 @@ static const char *init(struct plugin *p,
 	return NULL;
 }
 
-
 static const struct plugin_notification notifs[] = { 
 	{
 		"channel_state_changed",
@@ -367,7 +363,7 @@ static const struct plugin_notification notifs[] = {
 };
 
 static const struct plugin_command commands[] = { {
-		"scbrecover",
+		"emergencyrecover",
 		"recovery",
 		"Populates the DB with stub channels",
 		"returns stub channel-id's on completion",
