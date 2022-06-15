@@ -24,6 +24,7 @@ MANPAGES := doc/lightning-cli.1 \
 	doc/lightning-delpay.7 \
 	doc/lightning-disableoffer.7 \
 	doc/lightning-disconnect.7 \
+	doc/lightning-emergencyrecover.7 \
 	doc/lightning-feerates.7 \
 	doc/lightning-fetchinvoice.7 \
 	doc/lightning-fundchannel.7 \
@@ -61,6 +62,7 @@ MANPAGES := doc/lightning-cli.1 \
 	doc/lightning-pay.7 \
 	doc/lightning-parsefeerate.7 \
 	doc/lightning-plugin.7 \
+	doc/lightning-recoverchannel.7 \
 	doc/lightning-reserveinputs.7 \
 	doc/lightning-sendinvoice.7 \
 	doc/lightning-sendonion.7 \

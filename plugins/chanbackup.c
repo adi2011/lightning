@@ -32,7 +32,7 @@ static bool json_to_str(const char *buffer, const jsmntok_t *tok,
 }
 
 /* This writes encrypted static backup in the recovery file */
-static void write_hsm(struct plugin *p, int fd, 
+static void write_hsm(struct plugin *p, int fd,
 					 const char *buf)
 {
 	const struct scb_chan **scb_chan_arr = tal_arr(buf, const struct scb_chan *, 0);
@@ -42,7 +42,7 @@ static void write_hsm(struct plugin *p, int fd,
 
 	json_for_each_arr(i, t, scbtok){
 		struct scb_chan *scb_chan;
-		const u8 *scb_tmp = tal_hexdata(buf, json_strdup(tmpctx, buf, t), 
+		const u8 *scb_tmp = tal_hexdata(buf, json_strdup(tmpctx, buf, t),
 											strlen(json_strdup(tmpctx, buf, t)));
 		size_t scblen_tmp = tal_count(scb_tmp);
 
@@ -50,16 +50,16 @@ static void write_hsm(struct plugin *p, int fd,
 		if(scb_chan == NULL){
 			plugin_err(p, "Something went wrong!");
 		}
-		
+
 		tal_arr_expand(&scb_chan_arr, scb_chan);
 	}
 
 	u8 *point = towire_static_chan_backup(buf, VERSION, timestamp, scb_chan_arr);
 
-	u8 *final = tal_arr(buf, 
+	u8 *final = tal_arr(buf,
 						u8,
-						tal_bytelen(point) + 
-							crypto_secretstream_xchacha20poly1305_ABYTES + 
+						tal_bytelen(point) +
+							crypto_secretstream_xchacha20poly1305_ABYTES +
 							crypto_secretstream_xchacha20poly1305_HEADERBYTES
 						);
 
@@ -70,10 +70,10 @@ static void write_hsm(struct plugin *p, int fd,
 		plugin_err(p, "Can't encrypt the data!");
 		return;
 	}
-	
+
 	if (crypto_secretstream_xchacha20poly1305_push(
 							   &crypto_state,
-						       final + 
+						       final +
 							   crypto_secretstream_xchacha20poly1305_HEADERBYTES,
 						       NULL, point,
 						       tal_bytelen(point),
@@ -82,7 +82,7 @@ static void write_hsm(struct plugin *p, int fd,
 		plugin_err(p, "Can't encrypt the data!");
 		return;
 	}
-	
+
 	if (!write_all(fd, final, tal_bytelen(final))) {
 			unlink_noerr("scb.tmp");
 			plugin_err(p, "Writing encrypted SCB: %s", strerror(errno));
@@ -106,15 +106,15 @@ static void maybe_create_new_scb(struct plugin *p, const char *scb_buf)
 
 	/* Comes here only if the file haven't existed before */
 	unlink_noerr("emergency.recover");
-	
-	/* This couldn't give EEXIST because we call unlink_noerr("scb.tmp") 
+
+	/* This couldn't give EEXIST because we call unlink_noerr("scb.tmp")
 	 * in INIT */
 	fd = open("scb.tmp", O_CREAT|O_EXCL|O_WRONLY, 0400);
 	if (fd < 0)
 		plugin_err(p, "Opening: %s", strerror(errno));
 
 	plugin_log(p, LOG_INFORM, "Creating Emergency Recovery");
-	
+
 	write_hsm(p, fd, scb_buf);
 
 	/* fsync (mostly!) ensures that the file has reached the disk. */
@@ -156,7 +156,7 @@ static u8 *decrypt_scb(struct plugin *p)
 	struct stat st;
 	int fd = open("emergency.recover", O_RDONLY);
 
-	if (stat("emergency.recover", &st) != 0) 
+	if (stat("emergency.recover", &st) != 0)
 		plugin_err(p, "SCB file is corrupted!: %s", strerror(errno));
 
 	u8 final[st.st_size];
@@ -165,14 +165,14 @@ static u8 *decrypt_scb(struct plugin *p)
 		plugin_log(p, LOG_DBG, "SCB file is corrupted!: %s", strerror(errno));
 		return NULL;
 	}
-	
+
 	crypto_secretstream_xchacha20poly1305_state crypto_state;
 
 	if (st.st_size < crypto_secretstream_xchacha20poly1305_ABYTES +
-					crypto_secretstream_xchacha20poly1305_HEADERBYTES) 
+					crypto_secretstream_xchacha20poly1305_HEADERBYTES)
 		plugin_err(p, "SCB file is corrupted!");
-	
-	u8 *ans = tal_arr(tmpctx, u8, st.st_size - 
+
+	u8 *ans = tal_arr(tmpctx, u8, st.st_size -
 						crypto_secretstream_xchacha20poly1305_ABYTES -
 						crypto_secretstream_xchacha20poly1305_HEADERBYTES);
 
@@ -184,14 +184,14 @@ static u8 *decrypt_scb(struct plugin *p)
 
 	if (crypto_secretstream_xchacha20poly1305_pull(&crypto_state, ans,
 						       NULL, 0,
-						       final + 
+						       final +
 							   crypto_secretstream_xchacha20poly1305_HEADERBYTES,
-						       st.st_size - 
+						       st.st_size -
 							   crypto_secretstream_xchacha20poly1305_HEADERBYTES,
 						       NULL, 0) != 0){
 		plugin_err(p, "SCB file is corrupted!");
 	}
-	
+
 	if (close(fd) != 0)
 		plugin_err(p, "Closing: %s", strerror(errno));
 
@@ -228,7 +228,7 @@ static struct command_result *recover(struct command *cmd,
 
 	if (!param(cmd, buf, params, NULL))
 		return command_param_failed();
-	
+
 	u8 *res = decrypt_scb(cmd->plugin);
 
 	if (!fromwire_static_chan_backup(cmd, res, &version, &timestamp, &scb)) {
@@ -248,7 +248,7 @@ static struct command_result *recover(struct command *cmd,
 		u8 *scb_hex = tal_arr(cmd, u8, 0);
 		towire_scb_chan(&scb_hex,scb[i]);
 		json_add_hex(req->js, NULL, scb_hex, tal_bytelen(scb_hex));
-	}	
+	}
 	json_array_end(req->js);
 
 	return send_outreq(cmd->plugin, req);
@@ -259,7 +259,7 @@ static void update_scb(struct plugin *p, const char *scb_buf)
 
 	/* If the temp file existed before, remove it */
 	unlink_noerr("scb.tmp");
-	
+
 	int fd = open("scb.tmp", O_CREAT|O_EXCL|O_WRONLY, 0400);
 	if (fd<0)
 		plugin_err(p, "Opening: %s", strerror(errno));
@@ -309,21 +309,21 @@ static struct command_result *json_state_changed(struct command *cmd,
 					     const char *buf,
 					     const jsmntok_t *params)
 {
-	const jsmntok_t *notiftok = json_get_member(buf, 
-										params, 
+	const jsmntok_t *notiftok = json_get_member(buf,
+										params,
 										"channel_state_changed"),
 	*statetok = json_get_member(buf, notiftok, "new_state");
-	
+
 	/* FIXME: I wanted to update the file on CHANNELD_AWAITING_LOCKIN,
 	 * But I don't get update for it, maybe because there is no previous_state,
-	 * also apparently `channel_opened` gets published when *peer* funded a channel with us? 
+	 * also apparently `channel_opened` gets published when *peer* funded a channel with us?
 	 * So, is their no way to get a notif on CHANNELD_AWAITING_LOCKIN? */
-	if (json_tok_streq(buf, statetok, "CLOSED") || 
+	if (json_tok_streq(buf, statetok, "CLOSED") ||
 		json_tok_streq(buf, statetok, "CHANNELD_NORMAL")) {
 
 		struct out_req *req;
 		req = jsonrpc_request_start(cmd->plugin, cmd ,"staticbackup",
-							after_staticbackup, &forward_error, 
+							after_staticbackup, &forward_error,
 							NULL);
 
 		return send_outreq(cmd->plugin, req);
@@ -355,7 +355,7 @@ static const char *init(struct plugin *p,
 	return NULL;
 }
 
-static const struct plugin_notification notifs[] = { 
+static const struct plugin_notification notifs[] = {
 	{
 		"channel_state_changed",
 		json_state_changed,

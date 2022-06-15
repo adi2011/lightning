@@ -1489,7 +1489,7 @@ static struct channel *wallet_stmt2channel(struct wallet *w, struct db_stmt *stm
 		tal_free(chan);
 		return NULL;
 	}
-	
+
 	return chan;
 }
 
@@ -1892,7 +1892,7 @@ void wallet_channel_save(struct wallet *w, struct channel *chan)
 	db_bind_u64(stmt, 19, chan->our_config.id);
 	if (chan->last_tx)
 		db_bind_psbt(stmt, 20, chan->last_tx->psbt);
-	else 
+	else
 		db_bind_null(stmt, 20);
 	db_bind_signature(stmt, 21, &chan->last_sig.s);
 	db_bind_int(stmt, 22, chan->last_was_revoke);

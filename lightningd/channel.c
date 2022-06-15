@@ -5,7 +5,6 @@
 #include <common/fee_states.h>
 #include <common/json_command.h>
 #include <common/json_helpers.h>
-#include <common/scb_wiregen.h>
 #include <common/type_to_string.h>
 #include <common/wire_error.h>
 #include <connectd/connectd_wiregen.h>
@@ -532,8 +531,8 @@ struct channel *new_channel(struct peer *peer, u64 dbid,
 
 	/* scid is NULL when opening a new channel so we don't
 	 * need to set error in that case as well */
-	if (scid && is_stub_scid(scid)) 
-		channel->error = towire_errorfmt(peer->ld, 
+	if (scid && is_stub_scid(scid))
+		channel->error = towire_errorfmt(peer->ld,
 								 &channel->cid,
 								 "We can't be together anymore.");
 
@@ -766,7 +765,7 @@ void channel_fail_permanent(struct channel *channel,
 {
 	/* Don't do anything if it's an stub channel because
 	 * peer has already closed it unilatelrally. */
-	if (is_stub_scid(channel->scid)) 
+	if (is_stub_scid(channel->scid))
 		return;
 
 	struct lightningd *ld = channel->peer->ld;

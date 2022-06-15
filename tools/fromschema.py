@@ -128,8 +128,8 @@ def output_members(sub, indent=''):
     # Remove deprecated and stub properties, collect warnings
     # (Stubs required to keep additionalProperties: false happy)
 
-    # FIXME: It fails for schemas which have only an array type with 
-    # no properties, ex: 
+    # FIXME: It fails for schemas which have only an array type with
+    # no properties, ex:
     # "abcd": {
     #  "type": "array",
     #   "items": {

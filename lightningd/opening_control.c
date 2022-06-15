@@ -1205,7 +1205,7 @@ static struct command_result *json_fundchannel_start(struct command *cmd,
 
 static struct channel *stub_chan(struct command *cmd,
 						 u64 id,
-						 struct node_id nodeid, 
+						 struct node_id nodeid,
 						 struct channel_id cid,
 						 struct bitcoin_outpoint funding,
 						 struct wireaddr_internal addr,
@@ -1218,14 +1218,14 @@ static struct channel *stub_chan(struct command *cmd,
 				 &nodeid,
 				 &addr,
 				 false);
-	
+
 	struct lightningd *ld = cmd->ld;
-	
+
 	struct channel_config *our_config = tal(cmd, struct channel_config);
 	our_config->id = 0;
 
 	u32 feerate;
-	feerate = FEERATE_FLOOR; 
+	feerate = FEERATE_FLOOR;
 
 	struct bitcoin_signature sig;
 	sig.sighash_type = SIGHASH_ALL;
@@ -1233,7 +1233,7 @@ static struct channel *stub_chan(struct command *cmd,
 	struct pubkey pk;
 	struct basepoints basepoints;
 
-	if(!pubkey_from_der(tal_hexdata(cmd, 
+	if(!pubkey_from_der(tal_hexdata(cmd,
 					type_to_string(tmpctx, struct node_id, &nodeid), 66),
 					33,
 					&pk))
@@ -1242,13 +1242,13 @@ static struct channel *stub_chan(struct command *cmd,
 	};
 
 	struct pubkey localFundingPubkey;
-	get_channel_basepoints(ld, 
-						   &nodeid, 
-						   id, 
-						   &basepoints, 
+	get_channel_basepoints(ld,
+						   &nodeid,
+						   id,
+						   &basepoints,
 						   &localFundingPubkey);
 
-	struct channel_info *channel_info = tal(cmd, 
+	struct channel_info *channel_info = tal(cmd,
 											struct channel_info);
 	channel_info->their_config.id = 0;
 	/* To avoid the log_broken from channel.c (line-310) */
@@ -1259,15 +1259,15 @@ static struct channel *stub_chan(struct command *cmd,
 	channel_info->old_remote_per_commit = pk;
 
 	u32 blockht = 100;
-	
+
 	struct short_channel_id *scid = tal(cmd, struct short_channel_id);
-	
+
 	/*To indicate this is an stub channel we keep it's scid to 1x1x1.*/
 	if (!mk_short_channel_id(scid, 1, 1, 1))
         fatal("Failed to make short channel 1x1x1!");
-	
+
 	/* Channel Shell with Dummy data(mostly) */
-	struct channel *channel; 
+	struct channel *channel;
 
 	channel = new_channel(peer, id,
 			      NULL, /* No shachain yet */
@@ -1304,9 +1304,8 @@ static struct channel *stub_chan(struct command *cmd,
 			      /* If we're fundee, could be a little before this
 			       * in theory, but it's only used for timing out. */
 			      get_network_blockheight(ld->topology),
-			      FEERATE_FLOOR, 
-				  /* Raw: convert to feerate */
-				  funding_sats.satoshis / MINIMUM_TX_WEIGHT * 1000,
+			      FEERATE_FLOOR,
+				  funding_sats.satoshis / MINIMUM_TX_WEIGHT * 1000 /* Raw: convert to feerate */,
 			      false,
 			      &basepoints,
 			   	  &localFundingPubkey,
@@ -1360,7 +1359,7 @@ static struct command_result *json_commit_channel(struct command *cmd,
 		struct lightningd *ld = cmd->ld;
 		struct channel *channel= stub_chan(cmd,
 									scb_chan->id,
-									scb_chan->node_id, 
+									scb_chan->node_id,
 									scb_chan->cid,
 									scb_chan->funding,
 									scb_chan->addr,
@@ -1375,7 +1374,7 @@ static struct command_result *json_commit_channel(struct command *cmd,
 
 		json_add_channel_id(response, NULL, &scb_chan->cid);
 	}
-	
+
 	/* This will try to reconnect to the peers and start
 	* initiating the process */
 	setup_peers(cmd->ld);

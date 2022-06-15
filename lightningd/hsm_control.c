@@ -153,11 +153,10 @@ static struct command_result *json_getsecret(struct command *cmd,
 					   const jsmntok_t *obj UNNEEDED,
 					   const jsmntok_t *params)
 {
-	
 	const char *info;
 	struct json_stream *response;
 	struct secret secret;
-	
+
 	if (!param(cmd, buffer, params,
 		   p_req("info", param_string, &info),
 		   NULL))

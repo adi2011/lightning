@@ -25,6 +25,7 @@
 #include <common/jsonrpc_errors.h>
 #include <common/key_derive.h>
 #include <common/param.h>
+#include <common/scb_wiregen.h>
 #include <common/shutdown_scriptpubkey.h>
 #include <common/status.h>
 #include <common/timeout.h>
@@ -32,7 +33,6 @@
 #include <common/utils.h>
 #include <common/version.h>
 #include <common/wire_error.h>
-#include <common/scb_wiregen.h>
 #include <connectd/connectd_wiregen.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -1766,8 +1766,8 @@ static void json_add_scb(struct command *cmd,
 			scb);
 }
 
-/* This will return a SCB for all the channels currently loaded 
-	in the in-memory channel */
+/* This will return a SCB for all the channels currently loaded
+ * in the in-memory channel */
 static struct command_result *json_hex_scb(struct command *cmd,
 					     const char *buffer,
 					     const jsmntok_t *obj UNNEEDED,
