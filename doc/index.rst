@@ -47,6 +47,7 @@ Core Lightning Documentation
    lightning-delpay <lightning-delpay.7.md>
    lightning-disableoffer <lightning-disableoffer.7.md>
    lightning-disconnect <lightning-disconnect.7.md>
+   lightning-emergencyrecover <lightning-emergencyrecover.7.md>
    lightning-feerates <lightning-feerates.7.md>
    lightning-fetchinvoice <lightning-fetchinvoice.7.md>
    lightning-fundchannel <lightning-fundchannel.7.md>
@@ -91,6 +92,7 @@ Core Lightning Documentation
    lightning-pay <lightning-pay.7.md>
    lightning-ping <lightning-ping.7.md>
    lightning-plugin <lightning-plugin.7.md>
+   lightning-recoverchannel <lightning-recoverchannel.7.md>
    lightning-reserveinputs <lightning-reserveinputs.7.md>
    lightning-sendcustommsg <lightning-sendcustommsg.7.md>
    lightning-sendinvoice <lightning-sendinvoice.7.md>
