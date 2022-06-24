@@ -25,6 +25,7 @@
 #include <common/jsonrpc_errors.h>
 #include <common/key_derive.h>
 #include <common/param.h>
+#include <common/scb_wiregen.h>
 #include <common/shutdown_scriptpubkey.h>
 #include <common/status.h>
 #include <common/timeout.h>
@@ -1753,6 +1754,55 @@ static const struct json_command listpeers_command = {
 };
 /* Comment added to satisfice AUTODATA */
 AUTODATA(json_command, &listpeers_command);
+
+static void json_add_scb(struct command *cmd,
+			  struct json_stream *response,
+			  struct channel *c)
+{
+	u8 *scb = tal_arr(cmd, u8, 0);
+
+	towire_scb_chan(&scb, c->scb);
+	json_add_hex_talarr(response, NULL,
+			scb);
+}
+
+/* This will return a SCB for all the channels currently loaded
+ * in the in-memory channel */
+static struct command_result *json_hex_scb(struct command *cmd,
+					     const char *buffer,
+					     const jsmntok_t *obj UNNEEDED,
+					     const jsmntok_t *params)
+{
+	struct json_stream *response;
+	struct peer *peer;
+	struct channel *channel;
+
+	if (!param(cmd, buffer, params, NULL))
+        return command_param_failed();
+
+	response = json_stream_success(cmd);
+
+	json_array_start(response, "scb");
+
+
+	list_for_each(&cmd->ld->peers, peer, list)
+		list_for_each(&peer->channels, channel, list)
+			json_add_scb(cmd, response, channel);
+
+	json_array_end(response);
+
+	return command_success(cmd, response);
+}
+
+static const struct json_command hex_scb_command = {
+	"staticbackup",
+	"backup",
+	json_hex_scb,
+	"Returns SCB of all the channels currently present in the DB"
+};
+/* Comment added to satisfice AUTODATA */
+AUTODATA(json_command, &hex_scb_command);
+
 
 struct command_result *
 command_find_channel(struct command *cmd,
