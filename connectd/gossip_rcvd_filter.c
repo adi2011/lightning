@@ -95,6 +95,7 @@ static bool is_msg_gossip_broadcast(const u8 *cursor)
 	case WIRE_ACCEPT_CHANNEL2:
 	case WIRE_INIT_RBF:
 	case WIRE_ACK_RBF:
+        case WIRE_PEER_STORAGE:
 #if EXPERIMENTAL_FEATURES
 	case WIRE_STFU:
 #endif

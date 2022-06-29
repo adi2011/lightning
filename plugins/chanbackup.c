@@ -17,8 +17,12 @@
 #include <sodium.h>
 #include <unistd.h>
 
+#include <common/type_to_string.h>
+
+
 /* VERSION is the current version of the data encrypted in the file */
 #define VERSION ((u64)1)
+#define PEER_STORAGE_FEATUREBIT 43
 
 /* Global secret object to keep the derived encryption key for the SCB */
 struct secret secret;
@@ -343,6 +347,63 @@ static struct command_result *json_state_changed(struct command *cmd,
 	return notification_handled(cmd);
 }
 
+static struct command_result *after_send_scb(struct command *cmd,
+                                             const char *buf,
+                                             const jsmntok_t *params,
+                                             void *cb_arg UNUSED)
+{
+	return notification_handled(cmd);
+}
+
+static struct command_result *json_connect(struct command *cmd,
+                                           const char *buf,
+                                           const jsmntok_t *params)
+{
+	const jsmntok_t *nodeid = json_get_member(buf,
+                                                  params,
+                                                  "id");
+
+        struct node_id *node_id = tal(cmd, struct node_id);
+        json_to_node_id(buf, nodeid, node_id);
+        struct stat st;
+        struct out_req *req;
+
+	int fd = open("emergency.recover", O_RDONLY);
+
+	if (stat("emergency.recover", &st) != 0)
+		plugin_err(cmd->plugin, "SCB file is corrupted!: %s",
+                          strerror(errno));
+
+	u8 *scb = tal_arr(cmd, u8, st.st_size);
+
+	if (!read_all(fd, scb, tal_bytelen(scb))) {
+		plugin_log(cmd->plugin, LOG_DBG, "SCB file is corrupted!: %s",
+                           strerror(errno));
+		return NULL;
+	}
+        u8 *finscb = towire_peer_storage(cmd, scb);
+
+        req = jsonrpc_request_start(cmd->plugin,
+                                    NULL,
+                                    "sendcustommsg",
+                                    after_send_scb,
+                                    &forward_error,
+                                    NULL);
+
+        json_add_node_id(req->js, "node_id", node_id);
+        json_add_hex(req->js, "msg", finscb, tal_bytelen(finscb));
+
+	if (fsync(fd) != 0) {
+	        plugin_err(cmd->plugin, "closing: %s", strerror(errno));
+	}
+
+	if (close(fd) != 0) {
+	        plugin_err(cmd->plugin, "closing: %s", strerror(errno));
+	}
+
+        return send_outreq(cmd->plugin, req);
+}
+
 static const char *init(struct plugin *p,
 			const char *buf UNUSED,
 			const jsmntok_t *config UNUSED)
@@ -370,7 +431,11 @@ static const struct plugin_notification notifs[] = {
 	{
 		"channel_state_changed",
 		json_state_changed,
-	}
+	},
+        {
+                "connect",
+                json_connect,
+        },
 };
 
 static const struct plugin_command commands[] = { {
@@ -384,8 +449,16 @@ static const struct plugin_command commands[] = { {
 
 int main(int argc, char *argv[])
 {
-	setup_locale();
-	plugin_main(argv, init, PLUGIN_RESTARTABLE, true, NULL,
+	struct feature_set *features = tal(NULL, struct feature_set);
+        setup_locale();
+
+        for (int i=0; i<ARRAY_SIZE(features->bits); i++)
+		features->bits[i] = tal_arr(features, u8, 0);
+        
+        set_feature_bit(&features->bits[NODE_ANNOUNCE_FEATURE], PEER_STORAGE_FEATUREBIT);
+        set_feature_bit(&features->bits[INIT_FEATURE], PEER_STORAGE_FEATUREBIT);
+
+	plugin_main(argv, init, PLUGIN_STATIC, true, features,
 		    commands, ARRAY_SIZE(commands),
 	        notifs, ARRAY_SIZE(notifs), NULL, 0,
 		    NULL, 0,  /* Notification topics we publish */

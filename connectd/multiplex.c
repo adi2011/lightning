@@ -281,6 +281,7 @@ static bool is_urgent(enum peer_wire type)
 	case WIRE_GOSSIP_TIMESTAMP_FILTER:
 	case WIRE_OBS2_ONION_MESSAGE:
 	case WIRE_ONION_MESSAGE:
+        case WIRE_PEER_STORAGE:
 #if EXPERIMENTAL_FEATURES
 	case WIRE_STFU:
 #endif
