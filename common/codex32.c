@@ -16,6 +16,184 @@
 #include <string.h>
 #include <time.h>
 
+struct checksum_engine {
+	uint8_t *generator;
+	uint8_t *residue;
+	uint8_t *target;
+};
+
+static const uint8_t logi[32] =
+{
+     0,  0,  1, 14,  2, 28, 15, 22,
+     3,  5, 29, 26, 16,  7, 23, 11,
+     4, 25,  6, 10, 30, 13, 27, 21,
+    17, 18,  8, 19, 24,  9, 12, 20,
+};
+
+static const uint8_t log_inv[31] =
+{
+     1,  2,  4,  8, 16,  9, 18, 13,
+    26, 29, 19, 15, 30, 21,  3,  6,
+    12, 24, 25, 27, 31, 23,  7, 14,
+    28, 17, 11, 22,  5, 10, 20,
+};
+
+static void addition_gf32(uint8_t *x, uint8_t y)
+{
+	*x = *x ^ y;
+	return;
+}
+
+static void multiply_gf32(uint8_t *x, uint8_t y)
+{
+	if (*x == 0 || y == 0) {
+		*x = 0;
+	} else {
+		*x = log_inv[(logi[*x] + logi[y]) % 31];
+	}
+	return;
+}
+
+/* Helper to input a single field element in the checksum engine. */
+static void input_fe(u8 *generator, u8 *residue, uint8_t e)
+{
+	size_t res_len = tal_count(residue);
+	u8 xn = residue[0];
+
+	for(size_t i = 1; i < res_len; i++) {
+		residue[i - 1] = residue[i];
+	}
+
+	residue[res_len - 1] = e;
+
+	for(size_t i = 0; i < res_len; i++) {
+		u8 x = generator[i];
+		multiply_gf32(&x, xn);
+		addition_gf32(&residue[i], x);
+	}
+}
+
+/* Helper to input the HRP of codex32 string into the checksum engine */
+static void input_hrp(u8 *generator, u8 *residue, const char *hrp)
+{
+	size_t i = 0;
+	for (i = 0; i < strlen(hrp); i++) {
+		input_fe(generator, residue, tolower(hrp[i]) >> 5);
+	}
+	input_fe(generator, residue, tolower(hrp[i]) >> 0);
+	for (i = 0; i < strlen(hrp); i++) {
+		input_fe(generator, residue, tolower(hrp[i]) & 0x1f);
+	}
+	return;
+}
+
+/* Helper to input data strong of codex32 into the checksum engine. */
+static void input_data_str(u8 *generator, u8 *residue, const char *datastr)
+{
+	size_t i = 0;
+
+	for (i = 0; i < strlen(datastr); i++) {
+		input_fe(generator, residue, bech32_charset_rev[(int)datastr[i]]);
+	}
+
+	return;
+}
+
+/* Helper to verify codex32 checksum */
+static bool checksum_verify_short (const char *hrp, const char *codex_datastr)
+{
+	struct checksum_engine *codex_checksum_engine = tal(tmpctx, struct checksum_engine);
+
+	static const uint8_t generator[] = {
+		25, 27,
+		17, 8,
+		0, 25,
+		25, 25,
+		31, 27,
+		24, 16,
+		16
+	};
+	static const uint8_t residue[] = {
+		0, 0,
+		0, 0,
+		0, 0,
+		0, 0,
+		0, 0,
+		0, 0,
+		1
+	};
+	static const uint8_t target[] = {
+		16, 25,
+		24, 3,
+		25, 11,
+		16, 23,
+		29, 3,
+		25, 17,
+		10
+	};
+	codex_checksum_engine->generator = tal_dup_arr(codex_checksum_engine, u8, generator, ARRAY_SIZE(generator), 0);
+	codex_checksum_engine->residue = tal_dup_arr(codex_checksum_engine, u8, residue, ARRAY_SIZE(residue), 0);
+	codex_checksum_engine->target = tal_dup_arr(codex_checksum_engine, u8, target, ARRAY_SIZE(target), 0);
+
+	input_hrp(codex_checksum_engine->generator, codex_checksum_engine->residue ,hrp);
+	input_data_str(codex_checksum_engine->generator, codex_checksum_engine->residue, codex_datastr);
+
+	if (!memeq(codex_checksum_engine->target, tal_bytelen(codex_checksum_engine->target),
+		   codex_checksum_engine->residue, tal_bytelen(codex_checksum_engine->residue))) {
+			return false;
+	};
+	return true;
+}
+
+/* Helper to verify codex32 long checksum */
+static bool checksum_verify_long (const char *hrp, const char *codex_datastr)
+{
+	struct checksum_engine *codex_checksum_engine = tal(tmpctx, struct checksum_engine);
+
+	static const u8 generator[] = {
+		15, 10,
+		25, 26,
+		9, 25,
+		21, 6,
+		23, 21,
+		6, 5,
+		22, 4,
+		23
+	};
+	static const u8 residue[] = {
+		0, 0,
+		0, 0,
+		0, 0,
+		0, 0,
+		0, 0,
+		0, 0,
+		0, 0,
+		1
+	};
+	static const u8 target[] = {
+		16, 25,
+		24, 3,
+		25, 11,
+		16, 23,
+		29, 3,
+		25, 17,
+		10, 25,
+		6
+	};
+	codex_checksum_engine->generator = tal_dup_arr(codex_checksum_engine, u8, generator, ARRAY_SIZE(generator), 0);
+	codex_checksum_engine->residue = tal_dup_arr(codex_checksum_engine, u8, residue, ARRAY_SIZE(residue), 0);
+	codex_checksum_engine->target = tal_dup_arr(codex_checksum_engine, u8, target, ARRAY_SIZE(target), 0);
+
+	input_hrp(codex_checksum_engine->generator, codex_checksum_engine->residue, hrp);
+	input_data_str(codex_checksum_engine->generator, codex_checksum_engine->residue, codex_datastr);
+
+	/* Check if target == residue */
+	if (!memeq(codex_checksum_engine->target, tal_bytelen(codex_checksum_engine->target),
+		   codex_checksum_engine->residue, tal_bytelen(codex_checksum_engine->residue))) {
+			return false;
+	};
+	return true;
+}
 
 /* Helper to sanity check the codex32 string parts */
 static char *sanity_check (const tal_t *ctx,
@@ -186,6 +364,13 @@ struct codex32 *codex32_decode(const tal_t *ctx,
 		checksum_len = 13;
 	}
 
+	if(parts->codexl == 0 && !checksum_verify_short(hrp, codex_datastr)) {
+		*fail = tal_fmt(ctx, "Invalid checksum!");
+		return NULL;
+	} else if (parts->codexl == 1 && !checksum_verify_long(hrp, codex_datastr)) {
+		*fail = tal_fmt(ctx, "Invalid checksum!");
+		return NULL;
+	}
 
 	parts->hrp = hrp;
 	parts->threshold = *pull_front_bytes(parts, &codex_datastr, 1) - '0';
