@@ -393,3 +393,36 @@ struct codex32 *codex32_decode(const tal_t *ctx,
 
 	return parts;
 }
+
+char *codex32_secret_encode(const tal_t *ctx,
+			    const char *id,
+			    const u8 *seed) {
+
+	char *c = tal(ctx, char);
+
+	/* Every codex32 has hrp `ms1` and since we are generating a 
+	 * secret it's share index would be `s` and threshold `0`. */
+	tal_append_fmt(&c, "ms10%ss", id);
+
+	uint8_t next_u5 = 0, rem = 0;
+
+        for (size_t i = 0; i < tal_count(seed); i++) {
+            /* Each byte provides at least one u5. Push that. */
+            uint8_t u5 = (next_u5 << (5 - rem)) | seed[i] >> (3 + rem);
+
+	    tal_append_fmt(&c, "%c", bech32_charset[u5]);
+            next_u5 = seed[i] & ((1 << (3 + rem)) - 1);
+
+            /* If there were 2 or more bits from the last iteration, then 
+             * this iteration will push *two* u5s. */
+            if(rem >= 2) {
+	        tal_append_fmt(&c, "%c", bech32_charset[next_u5 >> (rem - 2)]);
+                next_u5 &= (1 << (rem - 2)) - 1;
+            }
+            rem = (rem + 8) % 5;
+        }
+        if(rem > 0) {
+	    tal_append_fmt(&c, "%c", bech32_charset[next_u5 << (5 - rem)]);
+        }
+	return c;
+}

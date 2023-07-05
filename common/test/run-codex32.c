@@ -165,7 +165,10 @@ int main(int argc, char *argv[])
 	common_setup(argv[0]);
 	char *fail;
 	struct codex32 *parts;
-
+	const u8 *seed = tal_hexdata(tmpctx, "ffeeddccbbaa99887766554433221100ffeeddccbbaa99887766554433221100", 64);
+	const char *c = "leet";
+	printf("%s\n", codex32_secret_encode(tmpctx, c, seed));
+	return 0;
 	/*
 	 * Test vector 1
 	 *

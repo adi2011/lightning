@@ -23,6 +23,10 @@ struct codex32 {
 	codex32_encoding type;
 };
 
+char *codex32_secret_encode(const tal_t *ctx,
+			    const char *id,
+			    const u8 *seed);
+
 /** Decode a codex32 or codex32l string
  *
  *  Out: parts:       Pointer to a codex32. Will be
