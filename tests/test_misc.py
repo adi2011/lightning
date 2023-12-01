@@ -2760,6 +2760,108 @@ def test_emergencyrecover(node_factory, bitcoind):
     assert l1.rpc.listfunds()["channels"][0]["state"] == "ONCHAIN"
     assert l2.rpc.listfunds()["channels"][0]["state"] == "ONCHAIN"
 
+<<<<<<< Updated upstream
+=======
+@unittest.skipIf(os.getenv('TEST_DB_PROVIDER', 'sqlite3') != 'sqlite3', "sqlite3-specific DB rollback")
+@pytest.mark.openchannel('v1')
+@pytest.mark.openchannel('v2')
+def test_recover_plugin(node_factory, bitcoind):
+    l1 = node_factory.get_node(may_reconnect=True,options={'log-level':'info'},
+                               allow_warning=True,
+                               feerates=(7500, 7500, 7500, 7500))
+    l2 = node_factory.get_node(may_reconnect=True,
+                               feerates=(7500, 7500, 7500, 7500), allow_broken_log=True)
+
+    l3 = node_factory.get_node(may_reconnect=True,options={'log-level':'info'},
+                               feerates=(7500, 7500, 7500, 7500), allow_broken_log=True)
+    
+    l4 = node_factory.get_node(may_reconnect=True, allow_broken_log=True)
+
+    lf = expected_peer_features()
+    l1.rpc.connect(l2.info['id'], 'localhost', l2.port)
+
+    l1.fundchannel(l2, 10**6)
+
+    l2.rpc.connect(l4.info['id'], 'localhost', l4.port)
+
+    l2.stop()
+
+    # Save copy of the db.
+    dbpath = os.path.join(l2.daemon.lightning_dir, TEST_NETWORK, "lightningd.sqlite3")
+    orig_db = open(dbpath, "rb").read()
+    l2.start()
+    time.sleep(15)
+    l2.rpc.connect(l4.info['id'], 'localhost', l4.port)
+    l2.rpc.connect(l3.info['id'], 'localhost', l3.port)
+    time.sleep(5)
+    l2.fundchannel(l3, 10**6)
+
+    print(l2.rpc.listpeerchannels())
+    # # l1 should have sent WIRE_CHANNEL_REESTABLISH with extra fields.
+    # l1.daemon.wait_for_log(r"\[OUT\] 0088"
+    #                        # channel_id
+    #                        "[0-9a-f]{64}"
+    #                        # next_local_commitment_number
+    #                        "0000000000000001"
+    #                        # next_remote_revocation_number
+    #                        "0000000000000000"
+    #                        # your_last_per_commitment_secret (funding_depth may
+    #                        # trigger a fee-update and commit, hence this may not
+    #                        # be zero)
+    #                        "[0-9a-f]{64}"
+    #                        # my_current_per_commitment_point
+    #                        "0[23][0-9a-f]{64}")
+
+    # After an htlc, we should get different results (two more commits)
+    l1.pay(l2, 200000000)
+
+    time.sleep(15)
+    # Make sure both sides consider it completely settled (has received both
+    # REVOKE_AND_ACK)
+    # l1.daemon.wait_for_logs([r"\[IN\] 0085"] * 2)
+    # l2.daemon.wait_for_logs([r"\[IN\] 0085"] * 2)
+
+    l2.restart()
+
+    time.sleep(15)
+    # # l1 should have sent WIRE_CHANNEL_REESTABLISH with extra fields.
+    # l1.daemon.wait_for_log(r"\[OUT\] 0088"
+    #                        # channel_id
+    #                        "[0-9a-f]{64}"
+    #                        # next_local_commitment_number
+    #                        "000000000000000[1-9]"
+    #                        # next_remote_revocation_number
+    #                        "000000000000000[1-9]"
+    #                        # your_last_per_commitment_secret
+    #                        "[0-9a-f]{64}"
+    #                        # my_current_per_commitment_point
+    #                        "0[23][0-9a-f]{64}")
+
+    # Now, move l2 back in time.
+    l2.stop()
+    os.unlink(os.path.join(l2.daemon.lightning_dir, TEST_NETWORK, "emergency.recover"))
+    # os.unlink(os.path.join(l2.daemon.lightning_dir, TEST_NETWORK, "gossip_store"))
+    # Overwrite with OLD db.
+    open(dbpath, "wb").write(orig_db)
+    l2.start()
+    l2.rpc.connect(l4.info['id'], 'localhost', l4.port)
+
+    time.sleep(15)
+    # l2 should freak out!
+    # l2.daemon.wait_for_log("Peer permanent failure in CHANNELD_NORMAL:.*Awaiting unilateral close")
+    time.sleep(15)
+    print(l2.rpc.listpeerchannels())
+
+    assert False
+    return
+
+    # l2 must NOT drop to chain.
+    l2.daemon.wait_for_log("Cannot broadcast our commitment tx: they have a future one")
+    assert not l2.daemon.is_in_log('sendrawtx exit 0',
+                                   start=l2.daemon.logsearch_start)
+
+    assert False
+>>>>>>> Stashed changes
 
 @unittest.skipIf(os.getenv('TEST_DB_PROVIDER', 'sqlite3') != 'sqlite3', "deletes database, which is assumed sqlite3")
 def test_restorefrompeer(node_factory, bitcoind):
