@@ -3511,6 +3511,26 @@ int main(int argc, char *argv[])
 			     ", revocations_received = %"PRIu64,
 			     commit_num, revocations_received(&shachain));
 
+		struct sha256 sha;
+		struct secret secret;
+		bool x = shachain_get_hash(&shachain, shachain_index(commit_num), &sha);
+		CROSS_TYPE_ASSIGNMENT(&secret, &sha);
+		if(x){}
+		
+		// for (unsigned int i = 0; i < chain->num_valid; i++) {
+		// 	/* If we can get from key to index only by resetting bits,
+		// 	* we can derive from it => index has no bits key doesn't. */
+		// 	if (!can_derive(chain->known[i].index, index))
+		// 		continue;
+
+		// 	derive(chain->known[i].index, index, &chain->known[i].hash,
+		// 	hash);
+		// 	return true;
+		// }
+		// return false;
+
+		status_debug("ha bhai first condition is passed %d %s %d", x, fmt_secret(tmpctx, &secret), shachain.num_valid);
+
 		if (is_local_commitment(&tx->txid, &our_broadcast_txid))
 			handle_our_unilateral(tx, tx_blockheight,
 					      basepoints,

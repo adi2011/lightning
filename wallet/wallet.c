@@ -882,6 +882,49 @@ static unsigned int count_trailing_zeroes(uint64_t index)
 #endif
 }
 
+static void wallet_stub_shachain_init(struct wallet *wallet,
+				      struct wallet_shachain *chain)
+{
+	struct db_stmt *stmt;
+
+	stmt = db_prepare_v2(
+		wallet->db,
+		SQL("INSERT into shachains (min_index, num_valid) VALUES (?, ?);"));
+	db_bind_u64(stmt, chain->chain.min_index);
+	db_bind_u64(stmt, chain->chain.num_valid);
+	db_exec_prepared_v2(stmt);
+
+	chain->id = db_last_insert_id_v2(stmt);
+	tal_free(stmt);
+	for (unsigned int i = 0; i < 10; i++) {
+		u64 index = shachain_index(i);
+		u32 pos = count_trailing_zeroes(index);
+		struct secret s;
+		memcpy(&s, &chain->chain.known[pos].hash, sizeof(s));
+
+		log_debug(wallet->log, "secret is converted finally before %s", fmt_secret(tmpctx, &s));
+	}
+
+	for (unsigned int i = 0; i < chain->chain.num_valid; i++) {
+		u64 index = shachain_index(i);
+		u32 pos = count_trailing_zeroes(index);
+		struct secret s;
+		memcpy(&s, &chain->chain.known[pos].hash, sizeof(s));
+
+		log_debug(wallet->log, "secret is converted finally %s", fmt_secret(tmpctx, &s));
+		stmt = db_prepare_v2(
+			wallet->db,
+			SQL("INSERT INTO shachain_known (shachain_id, "
+				    "pos, idx, hash) VALUES (?, ?, ?, ?);")
+		);
+		db_bind_u64(stmt, chain->id);
+		db_bind_int(stmt, pos);
+		db_bind_u64(stmt, index);
+		db_bind_secret(stmt, &s);
+		db_exec_prepared_v2(take(stmt));
+	}
+}
+
 bool wallet_shachain_add_hash(struct wallet *wallet,
 			      struct wallet_shachain *chain,
 			      uint64_t index,
@@ -926,8 +969,17 @@ bool wallet_shachain_add_hash(struct wallet *wallet,
 		db_bind_u64(stmt, chain->id);
 		db_bind_int(stmt, pos);
 		db_bind_u64(stmt, index);
+		struct secret h;
+		memcpy(&h, &chain->chain.known[pos].hash, sizeof(h));
+
+		log_debug(wallet->log, "secret inserted is %s %u %llu %s", fmt_secret(tmpctx, hash), pos, index, fmt_secret(tmpctx, &h));
 		db_bind_secret(stmt, hash);
 		db_exec_prepared_v2(take(stmt));
+	} else if (updated) {
+		struct secret h;
+		memcpy(&h, &chain->chain.known[pos].hash, sizeof(h));
+
+		log_debug(wallet->log, "secret updated is %s %u %llu %s", fmt_secret(tmpctx, hash), pos, index, fmt_secret(tmpctx, &h));
 	}
 
 	return true;
@@ -1568,6 +1620,7 @@ static struct channel *wallet_stmt2channel(struct wallet *w, struct db_stmt *stm
 	if (!peer) {
 		peer = wallet_peer_load(w, peer_dbid);
 		if (!peer) {
+			log_debug(w->log, "peer load p end");
 			return NULL;
 		}
 	}
@@ -1638,6 +1691,7 @@ static struct channel *wallet_stmt2channel(struct wallet *w, struct db_stmt *stm
 
 	if (!ok) {
 		tal_free(fee_states);
+		log_debug(w->log, "peer load p end1");
 		return NULL;
 	}
 
@@ -1651,6 +1705,7 @@ static struct channel *wallet_stmt2channel(struct wallet *w, struct db_stmt *stm
 
 	if (!ok) {
 		tal_free(height_states);
+		log_debug(w->log, "peer load p end2");
 		return NULL;
 	}
 
@@ -1658,6 +1713,7 @@ static struct channel *wallet_stmt2channel(struct wallet *w, struct db_stmt *stm
 	if (final_key_idx < 0) {
 		tal_free(fee_states);
 		log_broken(w->log, "%s: Final key < 0", __func__);
+		log_debug(w->log, "peer load p end3");
 		return NULL;
 	}
 
@@ -1834,9 +1890,10 @@ static struct channel *wallet_stmt2channel(struct wallet *w, struct db_stmt *stm
 
 	if (!wallet_channel_load_inflights(w, chan)) {
 		tal_free(chan);
+		log_debug(w->log, "peer load p end7");
 		return NULL;
 	}
-
+	log_debug(w->log, "peer load p end9");
 	return chan;
 }
 
@@ -2040,6 +2097,7 @@ static bool wallet_channels_load_active(struct wallet *w)
 	while (db_step(stmt)) {
 		struct channel *c = wallet_stmt2channel(w, stmt);
 		if (!c) {
+			log_debug(w->log, "loop m h hum");
 			ok = false;
 			break;
 		}
@@ -2600,7 +2658,11 @@ void wallet_channel_insert(struct wallet *w, struct channel *chan)
 
 	wallet_channel_config_insert(w, &chan->our_config);
 	wallet_channel_config_insert(w, &chan->channel_info.their_config);
-	wallet_shachain_init(w, &chan->their_shachain);
+	if (chan->scid && is_stub_scid(*chan->scid)) {
+		wallet_stub_shachain_init(w, &chan->their_shachain);
+	} else {
+		wallet_shachain_init(w, &chan->their_shachain);
+	}
 
 	/* Now save path as normal */
 	wallet_channel_save(w, chan);

@@ -774,6 +774,22 @@ static struct command_result *json_getemergencyrecoverdata(struct command *cmd,
 	return command_finished(cmd, response);
 }
 
+static struct command_result *commitment_revocation(struct command *cmd,
+					    	    const char *buf,
+					            const jsmntok_t *params)
+{
+	struct out_req *req;
+	plugin_log(cmd->plugin, LOG_DBG, "Updating Peer Storage after receiving new commitmemnt secret.");
+	req = jsonrpc_request_start(cmd->plugin,
+					cmd,
+					"staticbackup",
+					after_staticbackup,
+					&forward_error,
+					NULL);
+
+	return send_outreq(cmd->plugin, req);
+}
+
 static const char *init(struct plugin *p,
 			const char *buf UNUSED,
 			const jsmntok_t *config UNUSED)
@@ -815,7 +831,7 @@ static const struct plugin_notification notifs[] = {
 	{
 		"channel_state_changed",
 		json_state_changed,
-	}
+	},
 };
 
 static const struct plugin_hook hooks[] = {
@@ -827,6 +843,10 @@ static const struct plugin_hook hooks[] = {
 		"peer_connected",
 		peer_connected,
 	},
+	{
+		"commitment_revocation",
+		commitment_revocation,
+	}
 };
 
 static const struct plugin_command commands[] = {

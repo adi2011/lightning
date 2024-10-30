@@ -2306,13 +2306,37 @@ static const struct json_command listpeers_command = {
 /* Comment added to satisfice AUTODATA */
 AUTODATA(json_command, &listpeers_command);
 
+static unsigned int count_trailing_zeroess(uint64_t index)
+{
+#if HAVE_BUILTIN_CTZLL
+	return index ? (unsigned int)__builtin_ctzll(index) : SHACHAIN_BITS;
+#else
+	unsigned int i;
+
+	for (i = 0; i < SHACHAIN_BITS; i++) {
+		if (index & (1ULL << i))
+			break;
+	}
+	return i;
+#endif
+}
+
 static void json_add_scb(struct command *cmd,
 			 const char *fieldname,
 			 struct json_stream *response,
 			 struct channel *c)
 {
 	u8 *scb = tal_arr(cmd, u8, 0);
-
+	// Update shachain in SCB.
+	c->scb->their_shachain = c->their_shachain.chain;
+	log_debug(cmd->ld->log, "commitmennt number is %llu %d %d", revocations_received(&c->scb->their_shachain), c->scb->their_shachain.num_valid, c->their_shachain.chain.num_valid);
+	for (unsigned int i = 0; i < c->scb->their_shachain.num_valid; i++) {
+		u64 index = shachain_index(i);
+		u32 pos = count_trailing_zeroess(index);
+		struct secret s;
+		memcpy(&s, &c->scb->their_shachain.known[pos].hash, sizeof(s));
+		log_debug(cmd->ld->log, "hash at the time of inserting is %s %u %llu", fmt_secret(tmpctx, &s), pos, index);
+	}
 	towire_scb_chan(&scb, c->scb);
 	json_add_hex_talarr(response, fieldname,
 			    scb);

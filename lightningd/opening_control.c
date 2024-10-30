@@ -1447,7 +1447,10 @@ static struct channel *stub_chan(struct command *cmd,
 				 struct bitcoin_outpoint funding,
 				 struct wireaddr addr,
 				 struct amount_sat funding_sats,
-				 struct channel_type *type)
+				 struct channel_type *type,
+				 struct shachain shachain,
+				 struct basepoints their_basepoint,
+				 enum side opener)
 {
 	struct basepoints basepoints;
 	struct bitcoin_signature *sig;
@@ -1460,9 +1463,14 @@ static struct channel *stub_chan(struct command *cmd,
 	struct pubkey localFundingPubkey;
 	struct pubkey pk;
 	struct short_channel_id *scid;
-	u32 blockht;
+	u32 blockht = 0;
 	u32 feerate;
 	struct channel_stats zero_channel_stats;
+	struct wallet_shachain *their_shachain = tal(cmd, struct wallet_shachain);
+	their_shachain->chain = shachain;
+	their_shachain->id = 0;
+
+	log_debug(cmd->ld->log, "num value is = %d", their_shachain->chain.num_valid);
 	u8 *dummy_sig = tal_hexdata(cmd,
 				    "30450221009b2e0eef267b94c3899fb0dc73750"
 				    "12e2cee4c10348a068fe78d1b82b4b1403602207"
@@ -1525,7 +1533,7 @@ static struct channel *stub_chan(struct command *cmd,
 	memset(our_config, 0, sizeof(struct channel_config));
 	memset(their_config, 0, sizeof(struct channel_config));
 	channel_info->their_config = *their_config;
-	channel_info->theirbase = basepoints;
+	channel_info->theirbase = their_basepoint;
 	channel_info->remote_fundingkey = pk;
 	channel_info->remote_per_commit = pk;
 	channel_info->old_remote_per_commit = pk;
@@ -1538,12 +1546,12 @@ static struct channel *stub_chan(struct command *cmd,
                 fatal("Failed to make short channel 1x1x1!");
 
 	memset(&zero_channel_stats, 0, sizeof(zero_channel_stats));
-
+	log_debug(cmd->ld->log, "stubbed commitment number is %lld", revocations_received(&their_shachain->chain));
 	/* Channel Shell with Dummy data(mostly) */
 	channel = new_channel(peer, id,
-			      NULL, /* No shachain yet */
+			      their_shachain,
 			      CHANNELD_NORMAL,
-			      LOCAL,
+			      opener,
 			      NULL,
 			      "restored from static channel backup",
 			      0, false, false,
@@ -1570,7 +1578,7 @@ static struct channel *stub_chan(struct command *cmd,
 			      sig,
 			      NULL, /* No HTLC sigs */
 			      channel_info,
-			      new_fee_states(cmd, LOCAL, &feerate),
+			      new_fee_states(cmd, opener, &feerate),
 			      NULL, /* No shutdown_scriptpubkey[REMOTE] */
 			      NULL,
 			      1, false,
@@ -1578,7 +1586,7 @@ static struct channel *stub_chan(struct command *cmd,
 			      /* If we're fundee, could be a little before this
 			       * in theory, but it's only used for timing out. */
 			      get_network_blockheight(ld->topology),
-                              FEERATE_FLOOR,
+                              feerate,
                               funding_sats.satoshis / MINIMUM_TX_WEIGHT * 1000 /* Raw: convert to feerate */,
 			      &basepoints,
 			      &localFundingPubkey,
@@ -1591,7 +1599,7 @@ static struct channel *stub_chan(struct command *cmd,
 			      NUM_SIDES, /* closer not yet known */
 			      REASON_REMOTE,
 			      NULL,
-			      take(new_height_states(ld->wallet, LOCAL,
+			      take(new_height_states(ld->wallet, opener,
 						    &blockht)),
 			      0, NULL, 0, 0, /* No leases on v1s */
 			      ld->config.htlc_minimum_msat,
@@ -1647,11 +1655,16 @@ static struct command_result *json_recoverchannel(struct command *cmd,
 						   scb_chan->funding,
 						   scb_chan->addr,
 						   scb_chan->funding_sats,
-						   scb_chan->type);
+						   scb_chan->type,
+						   scb_chan->their_shachain,
+						   scb_chan->their_basepoint,
+						   scb_chan->opener);
 
 		/* Returns NULL only when channel already exists, so we skip over it. */
 		if (channel == NULL)
 			continue;
+
+		log_debug(cmd->ld->log, "I am here bitchh aakhir kaar");
 
 		/* Now we put this in the database. */
 		wallet_channel_insert(ld->wallet, channel);

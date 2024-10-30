@@ -2470,8 +2470,8 @@ void peer_got_revoke(struct channel *channel, const u8 *msg)
 	}
 
 	log_debug(channel->log,
-		  "got revoke %"PRIu64": %zu changed",
-		  revokenum, tal_count(changed));
+		  "got revoke %"PRIu64": %zu changed %d",
+		  revokenum, tal_count(changed), channel->their_shachain.chain.num_valid);
 
 	/* Save any immediate failures for after we reply. */
 	badonions = tal_arrz(msg, enum onion_wire, tal_count(changed));

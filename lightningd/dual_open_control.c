@@ -1452,6 +1452,9 @@ wallet_commit_channel(struct lightningd *ld,
 		channel->scb->funding = *funding;
 		channel->scb->cid = channel->cid;
 		channel->scb->funding_sats = total_funding;
+		channel->scb->their_shachain = channel->their_shachain.chain;
+		channel->scb->their_basepoint = channel_info->theirbase;
+		channel->scb->opener = channel->opener;
 	} else
 		channel->scb = NULL;
 

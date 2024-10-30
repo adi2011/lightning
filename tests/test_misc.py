@@ -2882,6 +2882,53 @@ def test_getemergencyrecoverdata(node_factory):
     assert lines == filedata
 
 
+def test_emergencyrecovertxn(node_factory, bitcoind):
+        l1, l2 = node_factory.get_nodes(2, [{'broken_log': 'ERROR: Unknown commitment #.*, recovering our funds!',
+                                         'may_reconnect': True,
+                                         'allow_bad_gossip': True,
+                                         'rescan': 10},
+                                        {'may_reconnect': True}])
+
+        l1.rpc.connect(l2.info['id'], 'localhost', l2.port)
+        c12, _ = l2.fundchannel(l1, 10**5)
+        stubs = l1.rpc.emergencyrecover()["stubs"]
+        assert l1.daemon.is_in_log('channel {} already exists!'.format(_['channel_id']))
+
+        l2.rpc.pay(l1.rpc.invoice(25000000, 'lbl1', 'desc1')['bolt11'])
+
+        tx = l2.rpc.dev_sign_last_tx(l1.info['id'])['tx']
+
+        # Now make sure it is out of date
+        l2.rpc.pay(l1.rpc.invoice(25000000, 'lbl2', 'desc2')['bolt11'])
+
+        # l2 stops watching the chain, allowing the watchtower to react
+        l1.stop()
+
+        # Now l1 cheats
+        bitcoind.rpc.sendrawtransaction(tx)
+        time.sleep(1)
+        bitcoind.generate_block(1)
+
+        os.unlink(os.path.join(l1.daemon.lightning_dir, TEST_NETWORK, "lightningd.sqlite3"))
+
+        l1.start()
+        assert l1.daemon.is_in_log('Server started with public key')
+        stubs = l1.rpc.emergencyrecover()["stubs"]
+        assert len(stubs) == 1
+        assert stubs[0] == _["channel_id"]
+
+
+        # listfunds = l1.rpc.listfunds()["channels"][0]
+        # assert listfunds["short_channel_id"] == "1x1x1"
+
+        l1.stop()
+
+        l1.start()
+        assert l1.daemon.is_in_log('Server started with public key')
+
+        assert False
+
+
 @unittest.skipIf(os.getenv('TEST_DB_PROVIDER', 'sqlite3') != 'sqlite3', "deletes database, which is assumed sqlite3")
 def test_emergencyrecover(node_factory, bitcoind):
     """

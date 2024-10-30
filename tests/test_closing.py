@@ -1624,6 +1624,7 @@ def test_penalty_rbf_normal(node_factory, bitcoind, executor, chainparams, ancho
     # l1 prepares a theft commitment transaction
     theft_tx = l1.rpc.dev_sign_last_tx(l2.info['id'])['tx']
 
+
     # Now continue processing until fulfilment.
     l1.rpc.dev_reenable_commit(l2.info['id'])
     l2.rpc.dev_reenable_commit(l1.info['id'])

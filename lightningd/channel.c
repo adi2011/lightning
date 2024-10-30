@@ -490,6 +490,9 @@ struct channel *new_channel(struct peer *peer, u64 dbid,
 		channel->scb->cid = *cid;
 		channel->scb->funding_sats = funding_sats;
 		channel->scb->type = channel_type_dup(channel->scb, type);
+		channel->scb->their_shachain = channel->their_shachain.chain;
+		channel->scb->their_basepoint = channel_info->theirbase;
+		channel->scb->opener = opener;
 	} else
 		channel->scb = NULL;
 

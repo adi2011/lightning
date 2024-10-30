@@ -1,7 +1,10 @@
+#include <ccan/crypto/shachain/shachain.h>
 #include <common/node_id.h>
 #include <common/channel_id.h>
+#include <common/htlc_wire.h>
 #include <common/wireaddr.h>
 #include <common/channel_type.h>
+#include <common/derive_basepoints.h>
 #include <common/amount.h>
 #include <bitcoin/tx.h>
 
@@ -15,6 +18,9 @@ subtypedata,scb_chan,addr,wireaddr,
 subtypedata,scb_chan,funding,bitcoin_outpoint,
 subtypedata,scb_chan,funding_sats,amount_sat,
 subtypedata,scb_chan,type,channel_type,
+subtypedata,scb_chan,their_shachain,shachain,
+subtypedata,scb_chan,their_basepoint,basepoints,
+subtypedata,scb_chan,opener,enum side,
 
 msgtype,static_chan_backup,6135,
 msgdata,static_chan_backup,version,u64,
